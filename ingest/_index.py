@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source_id);
 """
 
+# FTS5 keyword index over chunks. External-content style: stores only what's
+# needed to rank; chunks table is the source of truth for text.
+FTS_DDL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    text,
+    chunk_id UNINDEXED,
+    source_id UNINDEXED,
+    tokenize = 'porter unicode61'
+);
+"""
+
 # vec0 virtual table — created separately because it requires the extension loaded.
 EMBEDDINGS_DDL = f"""
 CREATE VIRTUAL TABLE IF NOT EXISTS embeddings USING vec0(
@@ -92,6 +103,7 @@ def init_schema(conn: sqlite3.Connection, *, chunker_version: str = "v1",
     """Create tables. Idempotent — safe to call on every run."""
     conn.executescript(SCHEMA)
     conn.execute(EMBEDDINGS_DDL)
+    conn.execute(FTS_DDL)
     # Pin chunker + embed model versions; only insert if missing.
     conn.execute(
         "INSERT OR IGNORE INTO pin_versions(name, value) VALUES (?, ?)",
@@ -107,3 +119,24 @@ def init_schema(conn: sqlite3.Connection, *, chunker_version: str = "v1",
 def get_pinned(conn: sqlite3.Connection, name: str) -> str | None:
     row = conn.execute("SELECT value FROM pin_versions WHERE name = ?", (name,)).fetchone()
     return row["value"] if row else None
+
+
+def backfill_fts(conn: sqlite3.Connection) -> int:
+    """Rebuild chunks_fts from current chunks. Idempotent."""
+    conn.execute("DELETE FROM chunks_fts")
+    cur = conn.execute(
+        "INSERT INTO chunks_fts(text, chunk_id, source_id) "
+        "SELECT text, chunk_id, source_id FROM chunks"
+    )
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def insert_chunk_into_fts(conn: sqlite3.Connection, chunk_id: str, source_id: str, text: str) -> None:
+    """Called from embed.py when a new chunk is created."""
+    # Delete first to keep one row per chunk_id (FTS5 doesn't have UNIQUE).
+    conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
+    conn.execute(
+        "INSERT INTO chunks_fts(text, chunk_id, source_id) VALUES (?, ?, ?)",
+        (text, chunk_id, source_id),
+    )

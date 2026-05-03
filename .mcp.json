@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "dair-corpus": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--extra",
+        "embed",
+        "python",
+        "-m",
+        "dair_mcp.server"
+      ],
+      "env": {}
+    }
+  }
+}
