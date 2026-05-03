@@ -1,0 +1,228 @@
+# authorities.yaml — source of truth for the authority graph.
+#
+# This file is hand-edited by the user. The DB caches it (table: authorities) but
+# rebuilds the cache on every reload. YAML deletions soft-delete in the DB.
+# See docs/authority-rules.md for engagement-detection rules and weighting.
+#
+# Tiers:
+#   canonical (1.0) — sustained track record, frontier-lab leads / core researchers
+#   trusted   (0.7) — strong contributors, narrower domains
+#   signal    (0.5) — reliable but lower-volume / niche
+#
+# Each entry needs: name, weight, tier, handles. `notes` is optional but useful
+# for future-you to remember why this person is on the list.
+#
+# This is a SEED list. Expand as you go. Aim for 50-200 entries; more dilutes
+# the signal. Run the monthly source-discovery job to surface candidates.
+
+authorities:
+  # Canonical (1.0) — track-record validators.
+  - name: Andrej Karpathy
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: karpathy
+      github: karpathy
+      youtube: AndrejKarpathy
+    notes: |
+      Founding OpenAI; ex-Tesla AI; nanoGPT, micrograd, the LLM wiki, the zero-to-hero
+      series. Posts on X are the canonical "this is signal, not hype" benchmark.
+
+  - name: Geoffrey Hinton
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: geoffreyhinton
+    notes: |
+      Backprop, Boltzmann machines, capsules. Public commentary post-Google.
+
+  - name: Yann LeCun
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: ylecun
+      github: ylecun
+    notes: |
+      Meta AI chief. Reliable counter-position on autoregressive-LLM-only futures.
+
+  - name: Ilya Sutskever
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: ilyasut
+    notes: |
+      Co-founder OpenAI; SSI. Sparse posting; high signal when he does.
+
+  - name: Demis Hassabis
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: demishassabis
+    notes: |
+      DeepMind CEO. Watch for direction signals on Gemini.
+
+  - name: Dario Amodei
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: DarioAmodei
+    notes: |
+      Anthropic CEO. Strategic statements on scaling laws + safety.
+
+  - name: Jared Kaplan
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: jaredkaplan_phd
+    notes: |
+      Anthropic; original scaling laws paper. Reliable on theory.
+
+  - name: Tri Dao
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: tri_dao
+      github: tridao
+    notes: |
+      FlashAttention; Mamba. Systems-side benchmarks of new architectures.
+
+  - name: Noam Shazeer
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: NoamShazeer
+    notes: |
+      Transformer co-author; Character.AI alum. Architectural depth.
+
+  - name: Jason Wei
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: _jasonwei
+    notes: |
+      OpenAI. Chain-of-thought; emergent abilities. Empirical-LLM signal.
+
+  - name: Sebastian Raschka
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: rasbt
+      github: rasbt
+    notes: |
+      Implementation-detail clarity. LLM book + open-source LLM tutorials.
+
+  # Trusted (0.7) — strong narrower domains.
+  - name: Nathan Lambert
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: natolambert
+    notes: |
+      Interconnects newsletter. Open-models tracking + RL post-training signal.
+
+  - name: Simon Willison
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: simonw
+      github: simonw
+    notes: |
+      Daily LLM blog. Practical-first; quick to land on what's actually useful.
+
+  - name: Jeremy Howard
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: jeremyphoward
+      github: jph00
+    notes: |
+      fast.ai; Answer.AI. Practitioner-side training/finetuning depth.
+
+  - name: Sasha Rush
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: srush_nlp
+      github: srush
+    notes: |
+      Cornell; HF. Annotated-Transformer. Pedagogical quality very high.
+
+  - name: Soumith Chintala
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: soumithchintala
+      github: soumith
+    notes: |
+      PyTorch co-creator. Infra + framework signal.
+
+  - name: Lilian Weng
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: lilianweng
+    notes: |
+      ex-OpenAI, deep technical blog posts that hold up over time.
+
+  - name: Chip Huyen
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: chipro
+    notes: |
+      ML systems / eval signal.
+
+  - name: Hyung Won Chung
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: hwchung27
+    notes: |
+      OpenAI. Lecture-style threads on transformer evolution.
+
+  - name: Aleksa Gordić
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: gordic_aleksa
+      github: gordicaleksa
+    notes: |
+      Implementation walkthroughs of frontier architectures.
+
+  - name: Eugene Yan
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: eugeneyan
+      github: eugeneyan
+    notes: |
+      Applied-ML systems; rec-sys + LLM-app patterns.
+
+  # Signal (0.5) — reliable, narrower / lower-volume.
+  - name: Charles Frye
+    weight: 0.5
+    tier: signal
+    handles:
+      twitter: charles_irl
+    notes: |
+      Modal; LLM-systems benchmarking.
+
+  - name: Susan Zhang
+    weight: 0.5
+    tier: signal
+    handles:
+      twitter: suchenzang
+    notes: |
+      OPT-175B training-log lead. Training-stack signal.
+
+  - name: Stella Biderman
+    weight: 0.5
+    tier: signal
+    handles:
+      twitter: BlancheMinerva
+      github: StellaAthena
+    notes: |
+      EleutherAI. Open-models eval/research signal.
+
+  # NOTE: this is a seed. Add 30-50 more before going live.
+  # Prioritize people whose retweet of a niche source would change your assessment.

@@ -1,0 +1,15 @@
+# Filesystem layout. Override paths here if you want them outside the repo.
+# Everything resolves relative to the project root unless absolute.
+
+corpus_dir: ./corpus
+scratch_dir: ./.claude/scratch
+reports_dir: ./reports
+evals_runs_dir: ./evals/runs
+notes_archive_dir: ./notes/archive
+
+# sqlite sidecar location (single file).
+sqlite_path: ./corpus/_index.sqlite
+
+# Lock files — `flock` targets for ingestion + authority polling.
+ingest_lock: ./corpus/.lock
+authority_poll_lock: ./corpus/.poll.lock

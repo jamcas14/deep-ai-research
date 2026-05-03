@@ -1,0 +1,112 @@
+# evals/cases.yaml — the regression set. Source of truth for "is the system getting better?"
+#
+# Five seed cases, one per category. They will fail at Step 2 (corpus is empty)
+# and that is the point — we want a failing-baseline before we write retrieval
+# code, so improvements show up as cases moving from FAIL to PASS.
+#
+# Each case has:
+#   - id: stable string used in run reports and history
+#   - category: recency | authority | counter_position | verification | benchmark
+#   - query: the natural-language input as the lead orchestrator would see it
+#   - expected: what a correct answer must contain (LLM-as-judge with a rubric)
+#   - blocked_until: optional — name of build step before pass is realistic
+#                    (used to prevent "this regressed" alerts on cases not yet
+#                    expected to pass)
+#
+# When adding a case:
+#   1. Write the rubric tightly enough that LLM-as-judge can score it.
+#   2. State the *failure mode* you are guarding against, not the topic.
+#   3. Set blocked_until honestly.
+
+cases:
+  - id: recency_deepseek_v4
+    category: recency
+    query: |
+      What is the most recent DeepSeek model and when was it released?
+
+    expected:
+      must_mention:
+        - "DeepSeek v4"
+      must_not_mention:
+        - "DeepSeek v3.2 is the latest"
+      reasoning: |
+        Claude Research previously recommended DeepSeek v3.2 when v4 was already
+        out. The corpus must contain the v4 release announcement and the recency
+        pass must surface it. This is the canonical recency regression case.
+    blocked_until: step_3_tier1_ingestion
+    notes: |
+      Date-validate the answer against the actual release timestamp at eval time
+      (the must_mention list is a static rubric; the judge prompt has the date).
+
+  - id: authority_karpathy_llm_wiki
+    category: authority
+    query: |
+      What memory systems should I look at for an LLM-based research assistant?
+
+    expected:
+      must_mention:
+        - "Karpathy's LLM wiki"
+      reasoning: |
+        Claude Research previously missed Karpathy's LLM wiki (released on X,
+        niche, no major-lab branding) because standard search treats sources as
+        SEO-equal. The authority graph must surface it. Full pass requires
+        Twitter ingestion (Tier 3); partial pass (the wiki shows up at all but
+        not necessarily ranked first) is acceptable at Step 4.
+    blocked_until: step_9_twitter_ingestion
+    notes: |
+      The single canonical authority-weighting regression case. Don't change the
+      query without updating the failure-mode rationale.
+
+  - id: counter_position_framework_y
+    category: counter_position
+    query: |
+      Should I use LangChain for a production agent system?
+
+    expected:
+      must_mention_pro:
+        - any of: ["ecosystem", "abstractions help", "popular"]
+      must_mention_con:
+        - any of: ["leaky abstractions", "debugging difficulty", "vendor churn"]
+      reasoning: |
+        Default ranking surfaces endorsement; we force dissent retrieval. Both
+        sides must appear in the synthesized answer. Specific terms in the
+        rubric are illustrative; the judge looks for a steelmanned con.
+    blocked_until: step_5_orchestration
+
+  - id: verification_fabricated_citation
+    category: verification
+    query: |
+      Has Anthropic published research on multi-agent orchestration with
+      Sonnet workers?
+
+    expected:
+      must_cite:
+        - any source with anthropic.com or research.anthropic.com domain
+      verification_must_catch:
+        kind: fabricated_citation
+        injected: |
+          Inject an apparent citation to "anthropic.com/research/megaagents-2024"
+          which does not exist. Verification pass must mark it as fabricated.
+      reasoning: |
+        Citation fabrication is the single biggest failure mode of deep-research
+        tools. The verification pass is the structural defense. This case
+        actively fabricates a citation and asserts the verification catches it.
+    blocked_until: step_5_orchestration
+
+  - id: benchmark_claude_lmarena
+    category: benchmark
+    query: |
+      What is Claude Opus 4's current LMArena ELO?
+
+    expected:
+      must_return:
+        kind: benchmark_score
+        benchmark: lmarena
+        model_substring: "claude"
+        timestamp_within_hours: 48
+      reasoning: |
+        Benchmarks have current+history retrieval, not corpus.search. This case
+        verifies the benchmarks subsystem returns a fresh value (within 48h of
+        the last LMArena snapshot). Failure means either staleness alert is
+        appropriate or the LMArena adapter is broken.
+    blocked_until: step_8_benchmarks

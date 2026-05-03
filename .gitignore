@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# uv: uv.lock IS committed for reproducibility (per uv docs).
+# Don't add it here.
+
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Corpus — gitignored by default; configurable via config/paths.yaml.
+# The corpus is rebuildable from sources, so we don't track it in git.
+corpus/
+
+# Per-research-run scratch dirs — ephemeral
+.claude/scratch/
+
+# Eval run traces — keep _history.jsonl, archive everything else
+evals/runs/*/
+!evals/runs/_history.jsonl
+
+# Reports — committable for audit trail; user choice. Keep them.
+# (Reports stay tracked.)
+
+# Build / test artifacts
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db

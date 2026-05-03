@@ -1,0 +1,18 @@
+# Per-content-type half-lives in days. Used at retrieval time:
+#   recency_decay(d) = exp(-ln(2) * age_days(d) / half_life(content_type(d)))
+#
+# Tunable. Re-run evals after changing.
+
+half_lives_days:
+  tweet: 7                          # for future use; Twitter ingestion deferred in v1
+  reddit_post: 14
+  hn_post: 14
+  newsletter_issue: 60
+  blog_post: 60
+  lab_blog_architecture: 180        # architecture-style posts age slowly
+  arxiv_paper: 365
+  podcast_episode: 90
+  hf_daily_papers: 30
+
+# Special: benchmark snapshots use most-recent-wins, not exponential decay.
+benchmarks_special_handling: true

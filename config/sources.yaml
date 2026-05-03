@@ -1,0 +1,67 @@
+# Adapter registry. Each adapter has a Python module under ingest/adapters/
+# matching its `name`. `enabled: false` skips during ingestion runs.
+#
+# Cadences are advisory; the runner only honors them if `respect_cadence: true`
+# in run config. For first runs, fetch everything new.
+
+newsletters:
+  - name: ainews
+    enabled: true
+    publication: "Smol AI / AINews"
+    feed_url: "https://news.smol.ai/rss.xml"
+    poll_interval_seconds: 3600           # hourly; AINews is daily
+    rate_limit_key: "news.smol.ai"
+    notes: |
+      Tier 1 — partially compensates for no Twitter ingestion.
+      Migrated from Buttondown to news.smol.ai in 2025/26.
+
+  - name: import_ai
+    enabled: true
+    publication: "Import AI"
+    feed_url: "https://importai.substack.com/feed"
+    poll_interval_seconds: 21600          # every 6h; weekly newsletter
+    rate_limit_key: "substack"
+
+  - name: tldr_ai
+    enabled: true
+    publication: "TLDR AI"
+    feed_url: "https://tldr.tech/api/rss/ai"
+    poll_interval_seconds: 7200           # 2h; daily-weekday cadence
+    rate_limit_key: "tldr.tech"
+
+  - name: last_week_ai
+    enabled: true
+    publication: "Last Week in AI"
+    feed_url: "https://lastweekin.ai/feed"
+    poll_interval_seconds: 21600
+    rate_limit_key: "lastweekin.ai"
+
+# Tier 2+ adapters added in later steps.
+# - interconnects: https://www.interconnects.ai/feed
+# - ahead_of_ai: https://magazine.sebastianraschka.com/feed
+# - simon_willison: https://simonwillison.net/atom/everything/
+# - eugene_yan: https://eugeneyan.com/rss/
+# - the_batch: https://www.deeplearning.ai/the-batch/feed/
+# - the_gradient: https://thegradient.pub/rss/
+# - alphasignal, bens_bites, davis_papers, deep_learning_weekly, the_sequence: TBD
+
+lab_blogs: []      # Step 7
+reddit: []         # Step 7
+hn: []             # Step 7
+hf_daily_papers: [] # Step 7
+podcasts: []       # Step 10
+benchmarks: []     # Step 8
+
+# Shared rate-limit broker. Each adapter declares a rate_limit_key; broker
+# enforces per-key caps so multiple Substack adapters share one budget.
+rate_limits:
+  default:
+    requests_per_minute: 30
+  substack:
+    requests_per_minute: 30
+  news.smol.ai:
+    requests_per_minute: 30
+  tldr.tech:
+    requests_per_minute: 30
+  lastweekin.ai:
+    requests_per_minute: 30

@@ -1,0 +1,838 @@
+# Personal AI Research Assistant — Final Plan
+
+> Status: pending user signoff. Once approved, this plan supersedes the contradictory docs/* written for the Postgres path. Those docs will be rewritten or removed in execution Step 0.
+
+## Why this exists
+
+Existing tools (Claude Research, OpenAI Deep Research, Perplexity, Gemini Deep Research) fail in two reproducible ways for AI/ML research:
+
+1. **Recency** — they recommend old versions (DeepSeek v3.2 when v4 is out, Sonnet 4.5 when 4.6 is out) because ranking favors older, more-linked content.
+2. **Authority/niche signal** — they miss niche-but-correct answers (Karpathy's LLM wiki) because they have no concept of *who I personally trust*.
+
+The system fixes both via a continuously-ingested local corpus + a hand-curated authority graph + a research loop with structural mechanisms for surfacing the underrated answer. **The corpus and the authority graph are the moat.** The orchestration loop is commodity.
+
+## How this plan was reached
+
+Five passes. Each pass tightened the plan; the largest reframes are flagged ★.
+
+- **Pass 1** — initial flaw analysis. Found 24 issues across architecture, ops, and unverified technical claims.
+- **Pass 2** — research verification. Spawned a `claude-code-guide` agent and a `deep-research` agent in parallel; ran three WebSearches concurrently. Verified Claude Code subagent semantics May 2026, embedding-model landscape, sqlite-vec status, Smol AI / AINews status, Whisper CPU performance, and current AI newsletter RSS availability.
+- **Pass 3** — synthesized findings. Twelve corrections to the prior plan, including the **biggest one: Claude Code subagents are sequential, not parallel** (multiple `Agent()` calls in one prompt run one-after-the-other unless you opt into experimental Agent Teams). Also: switch from `bge-small-en-v1.5` to `snowflake-arctic-embed-s`; switch from `.claude/commands/` to `.claude/skills/`; tool name is now `Agent`, not `Task`; AINews migrated to `news.smol.ai`.
+- **Pass 4** — write the final reconciled plan (this document).
+- **Pass 5** — held in reserve; if review surfaces remaining gaps, re-iterate.
+
+The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code is the runtime, native file tools (`Read`, `Glob`, `Grep`) work directly on markdown, and the realistic 5-year corpus (25–50K docs) doesn't need a relational database. The current plan is **markdown-first, native-Claude-Code-first, fully-free**.
+
+---
+
+## Architecture
+
+```
+~/code/projects/claude-deep-research-ai-domain/
+├── CLAUDE.md                          # ~80-line orientation; loaded every session
+├── PLAN.md                            # this file
+├── NOTES.md                           # current-month log; older content rotates to notes/archive/
+├── .claude/
+│   ├── skills/
+│   │   └── deep-research/
+│   │       └── SKILL.md               # /deep-research <question> entry point
+│   ├── agents/
+│   │   ├── orchestrator.md
+│   │   ├── researcher.md
+│   │   ├── contrarian.md              # finds underrated answers
+│   │   ├── verifier.md                # re-checks every citation
+│   │   ├── critic.md                  # flags missing perspectives
+│   │   └── synthesizer.md             # writes final cited report
+│   └── scratch/                       # per-run subagent coordination; ephemeral
+│       └── <run-id>/
+│           └── <role>.{md,json}
+├── corpus/                            # gitignore'd — 25–50K markdown files at maturity
+│   ├── newsletters/
+│   ├── lab-blogs/
+│   ├── reddit/
+│   ├── hn/
+│   ├── hf-daily-papers/
+│   ├── podcasts/
+│   ├── promoted-arxiv/
+│   ├── benchmarks/                    # JSON snapshots
+│   └── _index.sqlite                  # engagement edges + embeddings + chunker version
+├── ingest/
+│   ├── adapters/                      # one Python file per source
+│   │   ├── ainews.py                  # Smol AI / AINews — Tier 1
+│   │   ├── import_ai.py
+│   │   ├── tldr_ai.py
+│   │   ├── interconnects.py
+│   │   ├── lab_blogs.py
+│   │   ├── reddit.py
+│   │   ├── hn.py
+│   │   ├── hf_daily_papers.py
+│   │   ├── podcasts.py
+│   │   └── arxiv_promoted.py
+│   ├── poll_authorities.py            # daily authority engagement polling
+│   ├── summarize.py                   # Haiku-driven summarization
+│   ├── embed.py                       # snowflake-arctic-embed-s → sqlite-vec
+│   ├── chunk.py                       # versioned chunker; version recorded in sqlite
+│   ├── canonicalize.py                # URL canonicalization
+│   ├── frontmatter.py                 # pydantic schema + validation
+│   └── run.py                         # called by systemd-timer
+├── config/
+│   ├── authorities.yaml               # the moat — hand-curated
+│   ├── sources.yaml                   # adapter registry + cadences
+│   ├── decay.yaml                     # per-content-type half-lives
+│   └── paths.yaml                     # corpus location, scratch location, etc.
+├── mcp/
+│   └── corpus-server/                 # tiny MCP for sqlite-backed queries
+│       └── server.py                  # 4 tools max
+├── reports/                           # research outputs (committable, eval seed)
+│   └── 2026-05-03-deepseek-v4.md
+├── evals/
+│   ├── cases.yaml                     # regression seeds
+│   ├── run_all.py                     # eval runner
+│   └── runs/                          # archived run traces
+│       └── <run-id>/
+├── ops/
+│   ├── ingest.service                 # systemd unit
+│   ├── ingest.timer                   # systemd timer with Persistent=true
+│   └── verify-sqlite.sh               # ABI check for sqlite-vec
+├── tests/
+│   └── ...
+└── pyproject.toml                     # uv-managed deps
+```
+
+### Core architectural commitments
+
+1. **Markdown-first corpus.** Each ingested item is a `.md` file with YAML frontmatter. Claude Code's native `Read`/`Glob`/`Grep` reads them directly.
+2. **One small sqlite sidecar** (`corpus/_index.sqlite`) — engagement edges, embedding vectors, chunker/model versions. No Postgres, no pgvector, no Alembic.
+3. **Native Claude Code subagents** in `.claude/agents/`. `Agent` tool (renamed from `Task` in v2.1.63) for invocation. **Sequential** dispatch (parallel requires experimental `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — defer to v2).
+4. **Skill, not command** — `.claude/skills/deep-research/SKILL.md` is the entry point.
+5. **Subagent output coordination via scratch dir.** `.claude/scratch/<run-id>/<role>.{md,json}` — orchestrator reads/writes structured findings; bypasses the "subagents return only free text" limitation.
+6. **Live web is Claude Code's `WebSearch` + `WebFetch`.** Covered by the $200 Max plan. No Brave, no SearXNG, no separate web-search MCP.
+7. **Cost cap** is a per-run *token budget* (~250K input + 50K output max), enforced by orchestrator's running tally. Anthropic doesn't expose remaining-quota; estimate is good enough.
+8. **Cron replaced by systemd-timer with `Persistent=true`** — survives the user shutting down overnight.
+
+---
+
+## How you actually use it
+
+### Foreground (a research session)
+
+1. `cd ~/code/projects/claude-deep-research-ai-domain && claude`
+2. `/deep-research <question>`
+3. Skill loads orchestrator subagent.
+4. Orchestrator classifies query (recency / verification / exploration / recommendation / benchmark).
+5. Orchestrator generates a `<run-id>`, creates `.claude/scratch/<run-id>/`, plans 3–5 sub-questions.
+6. **Sequential** subagent dispatch:
+   - **Researcher** runs first (or 3–5 sequential researcher invocations, one per sub-question). Each searches corpus (`Glob`+`Grep` on markdown frontmatter, plus `corpus-server` MCP for `find_by_authority` queries) and `WebSearch` for gaps. Writes findings to `.claude/scratch/<run-id>/researcher-<N>.{md,json}`.
+   - **Contrarian** runs after researchers. Orchestrator passes "the obvious answer" identified by researchers; contrarian searches for underrated alternatives and writes to `contrarian.{md,json}`.
+   - **Forced recency pass** — orchestrator calls `corpus-server.recent(topic, hours=168)` directly (no subagent).
+   - **Synthesizer** writes the report draft to `synthesizer.md`.
+   - **Verifier** reads the report's citations and re-fetches each source to confirm the claim is actually in it; writes `verifier.json` with pass/fail per citation.
+   - **Critic** reads the verified report, flags missing perspectives, stale data, unaddressed counter-positions; writes `critic.md`.
+   - **Synthesizer** runs again, integrating verifier and critic feedback. Writes final report to `reports/YYYY-MM-DD-slug.md`.
+7. Orchestrator prints 5–10 bullet summary + report path to terminal.
+8. Total wall-clock: 2–5 minutes for typical queries. Sequential overhead is the cost; revisit Agent Teams if pain.
+
+### Background (continuous, you don't see it)
+
+- **systemd-timer** fires `ingest/run.py` every 15 min. `flock` on `corpus/.lock` ensures single-writer.
+- `run.py` consults `config/sources.yaml` for due adapters, dispatches each, summarizes new items via Haiku, embeds via arctic-embed-s, writes markdown files + sqlite rows.
+- Daily: `poll_authorities.py` runs (separate timer). Polls each authority's GitHub stars, arXiv author page, Reddit/HN username; records engagements.
+- Daily: `health.py` checks adapter staleness; appends to NOTES.md if anything's silent for 2× its `poll_interval`.
+- Weekly: `evals/run_all.py` runs the regression set against the system; writes `evals/runs/<week>-summary.md`.
+- Monthly: `notes/rotate.py` archives last month's NOTES content.
+- Monthly: source-discovery surfaces candidate new authorities/sources for review.
+
+### When something breaks
+
+- Adapter selector change → next ingestion run logs the failure → daily staleness alert → NOTES.md entry on next session start.
+- sqlite-vec ABI mismatch → `make verify-sqlite` catches it pre-flight; documented fallback to numpy+pickle.
+- Quota near-exhaustion → orchestrator's per-run token counter hits the cap → graceful stop with partial report.
+
+---
+
+## Tech stack with rationale
+
+| concern | choice | why |
+|---|---|---|
+| Orchestration runtime | Claude Code (CLI) | covered by $200 Max; native subagents + skills + MCP |
+| Lead orchestrator + research subagents | Sonnet 4.6 | published ~95% Opus quality at lower quota |
+| Final synthesis on classified-hard queries (conditional) | Opus 4.7 | only when orchestrator flags high-complexity |
+| Ingestion summarization | Haiku 4.5 | background, batch, cheap |
+| Eval judge | Opus 4.7 | judge ≠ system under test |
+| Embedding model | **snowflake-arctic-embed-s** (33M, 384-dim, Apache-2.0) | marginally better BEIR (51.98) than bge-small-en-v1.5 (51.68) at same size class; cleaner license; CPU-runnable |
+| Vector store | **sqlite-vec brute-force `vec0` table**; numpy+pickle as fallback | ~0.5–1ms top-K at 50K × 384-dim brute force; pre-v1 but solid at this scale; numpy-pickle is the bail-out |
+| Hybrid retrieval | **RRF (k=60)** over top-100 BM25 + top-100 vector; no score normalization | RRF outperforms min-max/z-score on hybrid (per arXiv 2508.01405) |
+| Reranker | none in v1; `bge-reranker-v2-m3` later if evals demand | ~350ms/pair on CPU; defer until needed |
+| Whisper variant | **faster-whisper** with `medium` model | ~4× realtime on CPU; 5 podcast hrs/week ≈ 1.25 CPU-hr |
+| Process supervision | **systemd-timer** with `Persistent=true` | survives overnight shutdowns |
+| Concurrency control | `flock` on `corpus/.lock` | single-writer guarantee |
+| Schema validation | pydantic on frontmatter | catch malformed frontmatter at ingestion |
+| Python toolchain | `uv` + `ruff` + `mypy` + pre-commit | per CLAUDE.md |
+
+### Sources for the technical claims
+
+- **Subagent semantics May 2026**: https://code.claude.com/docs/en/sub-agents.md, https://code.claude.com/docs/en/agent-teams.md, https://code.claude.com/docs/en/skills.md (sequential not parallel; `Agent` not `Task`; subagents can't spawn subagents; output is text-only)
+- **arctic-embed-s vs bge-small**: https://huggingface.co/Snowflake/snowflake-arctic-embed-s (51.98 BEIR Apache-2.0) vs https://huggingface.co/BAAI/bge-small-en-v1.5 (51.68 BEIR MIT)
+- **sqlite-vec status**: https://github.com/asg017/sqlite-vec/releases v0.1.9 March 2026; https://marcobambini.substack.com/p/the-state-of-vector-search-in-sqlite for latency benchmarks
+- **RRF over score normalization**: https://arxiv.org/html/2508.01405v2
+- **AINews migration**: https://news.smol.ai/ (replaced Buttondown)
+- **faster-whisper performance**: https://github.com/SYSTRAN/faster-whisper
+
+---
+
+## Subagent topology
+
+Six specialist subagents. Each has narrow `tools`, narrow `mcpServers`, narrow system prompt.
+
+### `orchestrator` (the one that runs your query)
+- **model**: `sonnet`
+- **tools**: `Agent(researcher, contrarian, verifier, critic, synthesizer)`, `Read`, `Write`, `Bash` (for sqlite queries via CLI), `Glob`, `Grep`
+- **mcpServers**: `corpus-server`
+- **system prompt**: classifies query; plans sub-questions; manages scratch dir; dispatches subagents in correct order; runs forced recency pass; assembles final report path; enforces token budget.
+
+### `researcher` (the worker)
+- **model**: `sonnet`
+- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`
+- **mcpServers**: `corpus-server`
+- **system prompt**: receives one sub-question + context; searches corpus first via `corpus-server.search` (which does RRF + authority + decay), then `WebSearch` if corpus is insufficient; writes findings as structured JSON+markdown to assigned scratch path.
+
+### `contrarian` (the structural fix for the Karpathy-wiki failure)
+- **model**: `sonnet`
+- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`
+- **mcpServers**: `corpus-server`
+- **system prompt**: receives "the obvious answer" identified by researchers; explicit job: *find the answer they'd miss*. Searches `corpus-server.search` with `min_authority_boost > 0` filter. Searches WebSearch for "alternative to X", "limitations of X", "X criticism", "what's better than X". Writes 2–3 underrated candidates with sources.
+
+### `verifier` (the structural fix for citation fabrication)
+- **model**: `sonnet`
+- **tools**: `Read`, `WebFetch`
+- **mcpServers**: `corpus-server` (for `fetch_detail`)
+- **system prompt**: reads the synthesizer's report; for each cited claim, re-fetches the cited source; confirms the claim is in it. Writes `verifier.json` with `{cite_id, status: pass|fail|inconclusive, evidence_excerpt}` per citation.
+
+### `critic` (the structural fix for missing perspectives)
+- **model**: `sonnet`
+- **tools**: `Read`
+- **mcpServers**: none (works only from scratch dir)
+- **system prompt**: reads the verified report; flags unsupported claims, missing counter-positions, stale citations (cited source >6mo old for fast-moving topic), reasoning gaps. Writes `critic.md`.
+
+### `synthesizer` (the writer)
+- **model**: `sonnet` for normal; `opus` if orchestrator classifies high-complexity
+- **tools**: `Read`, `Write`, `WebSearch` (for the recency-double-check)
+- **mcpServers**: `corpus-server` (for `recent` to check freshness)
+- **system prompt**: assembles the final cited report from researcher+contrarian findings. **Recency double-check rule**: if any cited source is older than 6 months for a fast-moving topic, runs `corpus-server.recent` to verify nothing newer supersedes; if it does, surface both. Iterates after critic feedback.
+
+---
+
+## Ingestion mechanics
+
+### Adapter contract
+
+Every adapter implements:
+
+```python
+class Adapter(Protocol):
+    name: str
+    poll_interval_seconds: int
+    rate_limit_key: str    # for shared limiter
+
+    def iter_new(self, since: datetime) -> Iterable[RawSource]: ...
+    def detect_engagements(self, raw: RawSource) -> Iterable[Engagement]: ...
+```
+
+Adapters yield raw records; `ingest/run.py` handles canonicalization → dedup → summarization (Haiku) → chunking (versioned) → embedding (arctic-s) → frontmatter generation → file write → engagement record write → sqlite update. Adapters never touch the DB or filesystem directly.
+
+### Frontmatter schema (pydantic-validated)
+
+```yaml
+---
+source_id: "smol-ai-news-2026-04-15"        # sha256(canonical_url)[:16] preferred
+source_type: "newsletter"
+publication: "Smol AI News"
+url: "https://news.smol.ai/issues/26-04-15-..."
+canonical_url: "https://news.smol.ai/issues/26-04-15-..."  # strips tracking params
+date: "2026-04-15"
+authors: ["smol-ai"]
+authorities_engaged: []                       # [{authority_id, kind}]
+mentioned_entities: ["DeepSeek V4", "Karpathy LLM Wiki"]
+mentioned_authorities: ["karpathy", "tri_dao"]
+tags: ["releases", "discord-summary"]
+ingested_at: "2026-04-15T08:00:00Z"
+content_hash: "sha256:abc..."                 # for revision detection
+revision: 1
+parent_id: null                               # set on revision >= 2
+chunker_version: "v1"
+embed_model: "snowflake-arctic-embed-s"
+embed_dim: 384
+---
+```
+
+### Stable IDs and revisions
+
+- `source_id = sha256(canonical_url)[:16]`
+- Re-ingesting same URL with same content → no-op (update `ingested_at` only)
+- Re-ingesting same URL with new `content_hash` → insert new row with `revision=2`, `parent_id=<original>`. Old revision preserved for audit.
+
+### sqlite schema (the only DB tables)
+
+```sql
+-- Engagement edges (the moat data)
+CREATE TABLE engagements (
+    id INTEGER PRIMARY KEY,
+    authority_id TEXT NOT NULL,            -- matches config/authorities.yaml id
+    source_id TEXT NOT NULL,
+    kind TEXT NOT NULL,                    -- author|retweet|star|fork|...
+    recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    metadata TEXT,                         -- JSON
+    UNIQUE(authority_id, source_id, kind)  -- idempotent
+);
+CREATE INDEX idx_engagements_source ON engagements(source_id);
+CREATE INDEX idx_engagements_authority ON engagements(authority_id, recorded_at DESC);
+
+-- Embeddings (one per chunk; multi-chunk docs allowed)
+CREATE VIRTUAL TABLE embeddings USING vec0(
+    chunk_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    embedding float[384]
+);
+
+-- Chunker/model version pins
+CREATE TABLE pin_versions (
+    name TEXT PRIMARY KEY,        -- 'chunker' | 'embed_model'
+    value TEXT NOT NULL,
+    pinned_at TIMESTAMP NOT NULL
+);
+
+-- Adapter health
+CREATE TABLE adapter_health (
+    adapter_name TEXT PRIMARY KEY,
+    last_success_at TIMESTAMP,
+    last_error_at TIMESTAMP,
+    last_error_message TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0
+);
+
+-- Cost ledger (for the per-run token budget)
+CREATE TABLE run_costs (
+    run_id TEXT PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    finished_at TIMESTAMP,
+    finish_reason TEXT
+);
+```
+
+### Authority engagement detection
+
+Per-authority `handles` in `authorities.yaml` drive what we poll. `poll_authorities.py` runs daily:
+
+| handle type | what we poll | how often | cadence reason |
+|---|---|---|---|
+| `github` | `GET /users/{handle}/starred?per_page=50` (paginated until we hit a previously-seen star) | daily | star activity is bursty but not per-minute |
+| `github` | `GET /users/{handle}/events/public` (commits, issues, PRs) | daily | events feed gives 90 days of history |
+| `arxiv_id` | author search via OpenAlex API or `https://arxiv.org/a/{handle}` HTML | weekly | new papers are rare per-author |
+| `reddit_username` | `GET /user/{name}/submitted` via PRAW (read-only) | daily | post cadence is human-scale |
+| `hn_username` | Algolia search `author:{name}` | daily | low-volume |
+| `twitter_handle` | DEFERRED in v1 | — | accept the gap |
+| newsletter author | mention-detection during summarization (Haiku asked: "Does this content link to or mention any of [authority list]?") | per-ingestion | inline at summary time |
+| podcast guest | parsed from RSS metadata `<itunes:episode><guests>` if available; otherwise summarizer extracts | per-ingestion | inline |
+
+Each engagement is upserted into the `engagements` table — `UNIQUE(authority_id, source_id, kind)` ensures idempotency. New authority added to YAML → run `python -m ingest.backfill_authority <handle>` to scan recent corpus and add historical engagement records.
+
+### Authority handle drift
+
+Twitter handles change. Add `aliases` field to `authorities.yaml` entries:
+
+```yaml
+- name: Andrej Karpathy
+  weight: 1.0
+  tier: canonical
+  handles:
+    twitter: karpathy
+    github: karpathy
+  aliases:
+    twitter: ["karpathy_old"]
+    github: []
+```
+
+Pollers consult both current handle and aliases. Engagements are recorded against the canonical `name`, not the handle.
+
+---
+
+## Retrieval mechanics
+
+### `corpus-server` MCP tools (4 total — keep it minimal)
+
+```
+search(query: str, filters: dict) -> list[Hit]
+    # Hybrid: top-100 ripgrep BM25 + top-100 vector cosine, RRF k=60.
+    # Apply authority_boost = min(4.0, 1 + Σ engagement_weights), recency_decay per-content-type.
+    # Filters: since/until, source_types, authors, min_authority_boost, entity_ids.
+    # Returns: list of {source_id, path, frontmatter, score, snippets}.
+
+find_by_authority(authority_id: str, since: str | None) -> list[Hit]
+    # SELECT source_id FROM engagements WHERE authority_id = ? AND recorded_at >= ?
+    # Returns full hit metadata including frontmatter excerpt.
+
+recent(topic: str | None, hours: int) -> list[Hit]
+    # Hard recency filter: published_at >= now() - hours.
+    # If topic provided, applies vector similarity within that window.
+    # Powers the forced recency pass.
+
+fetch_detail(source_id: str) -> dict
+    # Returns full markdown content + frontmatter for a source.
+    # Used by verifier to re-check citations.
+```
+
+Subagents call these via MCP; orchestrator can also call them directly. No other corpus-access entry points — keeps the contract narrow.
+
+### Ranking formula (the moat algorithm — pinned in writing)
+
+```
+candidates = top_100_bm25(query) ∪ top_100_vector(query)   # union, dedup by source_id
+rrf_score(d)        = 1/(60 + bm25_rank(d)) + 1/(60 + vec_rank(d))
+authority_boost(d)  = min(4.0, 1 + Σ_{(a, kind) ∈ engagements(d)} weight(a) * kind_weight(kind))
+recency_decay(d)    = exp(-ln(2) * age_days(d) / half_life(content_type(d)))
+final(d)            = rrf_score(d) * authority_boost(d) * recency_decay(d)
+return top_N by final, dedup by mentioned_entities at synthesis time
+```
+
+Half-lives in `config/decay.yaml`:
+
+```toml
+[half_lives_days]
+tweet = 7              # for future use; deferred in v1
+hn_post = 14
+reddit_post = 14
+newsletter_issue = 60
+blog_post = 60
+lab_blog_architecture = 180
+arxiv_paper = 365
+podcast = 90
+hf_daily_papers = 30
+benchmark_snapshot = "most-recent-wins"
+```
+
+Engagement kind weights (in code, not config):
+
+| source | kind | weight |
+|---|---|---|
+| github | commit_author, pr_author | 1.0 |
+| github | star, fork | 0.5, 0.4 |
+| github | issue_open, review | 0.3, 0.6 |
+| github | watch | 0.0 (rejected — too noisy) |
+| arxiv | author | 1.0 |
+| arxiv | cited_by_tracked | 0.6 |
+| reddit | post_author, comment_top_level | 1.0, 0.4 |
+| hn | post_author, comment_top_level | 1.0, 0.4 |
+| newsletter | author, mentioned_with_link | 1.0, 0.5 |
+| podcast | guest, host | 1.0, 0.7 |
+
+---
+
+## The four mechanisms that solve the failure modes
+
+1. **Authority-engagement boost in retrieval** — content tagged with `authorities_engaged` gets a multiplier capped at 4×. Prevents "Karpathy retweeted X" from being lost in SEO noise.
+
+2. **Per-content-type time decay** — half-lives in `config/decay.yaml`. A 1-day-old tweet vs. 14-day-old at equal base score: tweet ranks ~3.6× higher.
+
+3. **Forced contrarian subagent** — first-class part of the loop on recommendation queries. Its prompt is *"Find the answer the lead agent will miss."* Structural answer to the SEO bias.
+
+4. **Forced recency pass** — every research run includes a `corpus.recent(topic, hours=168)` sweep regardless of query phrasing. Wired into the orchestrator, not optional.
+
+---
+
+## Eval framework
+
+### Cases (seeded in `evals/cases.yaml`)
+
+Five seed cases exist; pattern is **behavioral over content** to avoid bit-rot:
+
+```yaml
+- id: recency_deepseek_latest
+  category: recency
+  query: "What is the most recent DeepSeek model and when was it released?"
+  expected_behavior:
+    - recency_pass_fired: true              # verified via run trace
+    - cites_source_within_days: 30
+    - cited_source_mentions_pattern: "DeepSeek"
+    - judge_check_live: true                # judge does WebSearch to validate version
+  blocked_until: step_3_tier1_ingestion
+```
+
+The **judge** (Opus 4.7) reads:
+- the query
+- the system's full report (with citations)
+- the run trace (subagent invocations, tool calls — for behavioral assertions)
+- optionally does its own WebSearch to ground-truth the answer
+
+Judge produces a structured score: pass/fail per behavioral criterion + a freeform critique.
+
+### Run trace format
+
+`.claude/scratch/<run-id>/` during a run; moved to `evals/runs/<run-id>/` after:
+
+```
+evals/runs/<run-id>/
+├── manifest.json              # query, classifier output, started/finished, finish_reason
+├── orchestrator.log           # what orchestrator decided when
+├── researcher-1.{md,json}     # findings + raw search results
+├── researcher-2.{md,json}
+├── researcher-3.{md,json}
+├── contrarian.{md,json}       # underrated answers found
+├── recency_pass.json          # the forced recency sweep result
+├── synthesizer-draft.md       # first draft
+├── verifier.json              # per-citation pass/fail
+├── critic.md                  # critique
+├── synthesizer-final.md       # final report (also copied to reports/)
+└── tokens.json                # input/output token tally per role
+```
+
+Eval framework reads `manifest.json` + `tokens.json` for behavioral assertions ("did recency pass fire?", "are there at least 3 distinct citations?", "did verifier reject anything?").
+
+### Cadence
+
+- Weekly: `evals/run_all.py` runs all unblocked cases and writes `evals/runs/<week>-summary.md`
+- Score history: tracked in `evals/runs/_history.jsonl` (append-only)
+- Regression alert: if a previously-passing case starts failing, NOTES.md gets an entry on the next session start
+
+---
+
+## Operational concerns
+
+### Where corpus/ lives
+
+Default: `./corpus/` inside the repo, **gitignored**. Path configurable via `config/paths.yaml` if user wants it elsewhere (e.g., `~/research-corpus/`). Rationale: keeps the codebase repo small, avoids huge git-history bloat, but allows the user to point at a separate disk if needed.
+
+### Backup strategy
+
+What gets backed up (small, irreplaceable):
+- `config/authorities.yaml` (the moat)
+- `config/sources.yaml`, `config/decay.yaml`, `config/paths.yaml`
+- `evals/cases.yaml`
+- `evals/runs/_history.jsonl`
+- `reports/*.md`
+- Codebase (committed via git, pushed to GitHub)
+
+What doesn't need backup (rebuildable):
+- `corpus/*.md` — re-ingestable from RSS/APIs
+- `corpus/_index.sqlite` — re-derivable from corpus markdown + re-running engagement polling
+
+`make backup` target tarballs the critical files to `~/backup/dair-YYYY-MM-DD.tar.gz`. Cron monthly.
+
+### Concurrency control
+
+`ingest/run.py` acquires exclusive `flock` on `corpus/.lock` at start. If can't acquire (previous run still going), exits silently — next timer tick picks up. Single-writer guarantee.
+
+`poll_authorities.py` uses a separate lock (`corpus/.poll.lock`) since it can run alongside ingestion safely (different DB tables).
+
+The `corpus-server` MCP server opens sqlite in read-only mode by default; write operations from MCP are limited to the cost ledger.
+
+### NOTES.md rotation
+
+`NOTES.md` accumulates entries for the current month. Monthly cron task `notes/rotate.py`:
+- Renames `NOTES.md` to `notes/archive/NOTES-YYYY-MM.md`
+- Creates fresh `NOTES.md` with a header pointing to archive
+- CLAUDE.md references `NOTES.md` (always current), not the archive
+
+### Cron alternative on Pop!_OS
+
+`systemd-timer` with `Persistent=true` is the right primitive on Pop!_OS. Sample units in `ops/`:
+
+```ini
+# ops/ingest.timer
+[Unit]
+Description=dair ingestion run
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true                    # catches missed runs after wake-from-sleep
+
+[Install]
+WantedBy=timers.target
+```
+
+Setup: `systemctl --user enable --now ingest.timer`.
+
+### Cost cap mechanics
+
+Anthropic doesn't expose remaining-quota. Approximation:
+- Orchestrator maintains a per-run token tally in `run_costs` table
+- Subagent token usage estimated from input message length + heuristic for output (typically 5-30K)
+- Per-run cap defaults to 250K input + 50K output tokens (~$1–2 of API equivalent under Max plan terms)
+- Cap exceeded → orchestrator stops dispatching new subagents, finalizes synthesis with what it has, marks `finish_reason='cost_cap'`
+
+This is approximate but prevents runaway. Real defense is the user's discipline + the ~30min/wk maintenance pattern.
+
+### Setup credentials needed
+
+Free tier all of these:
+
+| credential | what it's for | where to get | rate limit |
+|---|---|---|---|
+| GitHub PAT | authority engagement polling, GitHub MCP | github.com/settings/tokens | 5K/hr authenticated |
+| HuggingFace token | HF Daily Papers, future model downloads | huggingface.co/settings/tokens | 100K/mo Inference credits |
+| Reddit app | r/LocalLLaMA, r/MachineLearning ingestion | reddit.com/prefs/apps | 100 QPM with OAuth |
+| Anthropic | covered by $200 Max plan | already have it | per Max plan terms |
+
+Stored in `.env` (gitignored). `.env.example` checked in.
+
+---
+
+## Sources to ingest
+
+### Tier 1 — first 4 newsletters (build first)
+
+1. **Smol AI / AINews** — `https://news.smol.ai/` — daily, summarizes top AI Discords / Reddits / X. Tier-1 because it partially compensates for no Twitter ingestion.
+2. **Import AI** (Jack Clark) — weekly, research + policy.
+3. **TLDR AI** — daily, model releases / research / launches / funding in 5-min reads.
+4. **Last Week in AI** — weekly, comprehensive summary.
+
+### Tier 2 — remaining newsletters
+
+5. **Interconnects** (Nathan Lambert) — open-models tracking, RL post-training. RSS: `https://www.interconnects.ai/feed`
+6. **The Batch** (DeepLearning.AI / Andrew Ng) — weekly research + policy
+7. **Ahead of AI** (Sebastian Raschka) — practitioner depth
+8. **Eugene Yan** — applied ML systems, blog RSS
+9. **Simon Willison** — daily LLM blog, RSS
+10. **Lilian Weng** — deep technical blog posts
+11. **Chip Huyen** — ML systems blog
+12. **The Gradient** — technical essays
+13. **Deep Learning Weekly** — engineering-focused
+14. **AlphaSignal** — engineer-focused brief
+15. **Davis Summarizes Papers** — paper digests
+
+For each: verify RSS feed exists at setup time. Substack-hosted ones reliably have RSS at `<base>/feed`. If a newsletter goes paid-only, mark it deferred and continue with the others.
+
+### Lab blogs (~30, persisted entirely via RSS)
+
+Anthropic, OpenAI, DeepMind, Meta AI, Mistral, Cohere, AI2, EleutherAI, DeepSeek, Qwen/Alibaba, Moonshot/Kimi, xAI, Inflection, Adept, Reka, Together AI, Stability AI, NVIDIA AI Research, Microsoft Research, Apple ML Research, Google AI Blog, HuggingFace, Mosaic/Databricks, Replicate, Modal, vLLM, Cerebras, Groq, Lightning AI, Anyscale.
+
+`config/sources.yaml` lists each with RSS URL + cadence. Failures during setup mark adapter inactive; user can retry monthly.
+
+### Reddit (PRAW, read-only)
+
+- `r/LocalLLaMA` — titles + top-thread summary
+- `r/MachineLearning` — titles + top-thread summary
+
+### Hacker News (Algolia API, free)
+
+AI-keyword filtered firehose (keywords: `LLM`, `transformer`, `Claude`, `GPT`, `attention`, `embedding`, `vector`, `RAG`, `agent`, …). Persist titles + top-comment summary.
+
+### HuggingFace Daily Papers
+
+Curated daily list at `https://huggingface.co/papers`. The HF API exposes daily papers programmatically (`hf_hub_api.list_daily_papers(date=...)`). Persist as a single index file per day plus a stub-summary per paper; full text NOT persisted unless paper hits promotion threshold.
+
+### Podcast transcripts (faster-whisper, medium model)
+
+- Latent Space
+- Dwarkesh Podcast
+- Machine Learning Street Talk (MLST)
+- No Priors
+- Cognitive Revolution
+
+Adapter: download new episodes via RSS → transcribe with faster-whisper medium → summarize with Haiku → write markdown. Run as daily batch (overnight if heavy day).
+
+### Promoted arXiv papers
+
+Ingestion threshold: an arXiv paper gets promoted to a corpus entry (with full summary) when **any** of:
+- cited by an authority (via OpenAlex citation graph)
+- mentioned in 2+ tracked newsletters
+- has an associated GitHub repo with >100 stars
+- manually flagged by user via `python -m ingest.promote <arxiv_id>`
+
+Otherwise: NOT persisted. Live arXiv search via `WebSearch` covers ad-hoc lookups.
+
+### Benchmark snapshots
+
+Per-benchmark adapter scrapes JSON if available (LMArena GitHub data, Artificial Analysis endpoints, HF leaderboards as datasets) or falls back to `WebFetch` for rendered-only sites. Snapshot files: `corpus/benchmarks/<benchmark>/<YYYY-MM-DD>.json`. Tracked: LMArena, Artificial Analysis, OpenRouter, LiveBench, GPQA Diamond, HLE, SWE-bench Verified, Aider Polyglot.
+
+### Live-query only (NOT persisted)
+
+- arXiv search beyond promoted papers — Claude Code subagent calls arXiv API or WebSearch
+- HuggingFace model/dataset search beyond Daily Papers — `WebSearch` or HF API
+- GitHub ad-hoc repo search — `WebSearch` or GitHub API
+- General web — Claude Code's `WebSearch` and `WebFetch` (covered by Max plan)
+
+### Deferred (not in v1)
+
+- Twitter/X via any path. Accept ~12–36hr delay; rely on Smol AI / Reddit / HN as the proxy. Re-evaluate when X landscape settles.
+
+---
+
+## Build order
+
+Each step has a **done-when** condition and a clear next step. Don't skip ahead.
+
+### Step 0 — Reconcile docs (immediate)
+Update or remove the existing `docs/*` (Postgres-era; mostly wrong). Trim CLAUDE.md to point at this PLAN.md and the docs/* that survive.
+- **done when**: `docs/` reflects markdown-first architecture; CLAUDE.md ≤80 lines; no contradictions between PLAN.md and docs/*
+
+### Step 1 — Skeleton + 4 newsletter adapters
+- `pyproject.toml` (uv-managed, ruff/mypy/pytest)
+- `config/{authorities,sources,decay,paths}.yaml` filled with seed values
+- `ingest/run.py`, `ingest/canonicalize.py`, `ingest/frontmatter.py`, `ingest/summarize.py`, `ingest/chunk.py`
+- `ingest/adapters/{ainews,import_ai,tldr_ai,last_week_ai}.py`
+- Smol AI / AINews adapter built **first** — it's the highest-value Tier-1 source
+- `make verify-sqlite` script
+- **done when**: `python -m ingest.run` writes valid markdown files to `corpus/newsletters/` for the 4 sources; frontmatter validates; idempotent re-runs change nothing
+
+### Step 2 — Embedding sidecar
+- `ingest/embed.py` (snowflake-arctic-embed-s, ONNX preferred)
+- sqlite-vec table created (`vec0` virtual)
+- `pin_versions` table records chunker_version and embed_model
+- numpy+pickle fallback path documented in `ops/embed-fallback.md`
+- **done when**: every markdown file in `corpus/` has corresponding chunk embeddings in sqlite; ABI verified
+
+### Step 3 — Authority graph + engagement tagging
+- `config/authorities.yaml` populated (start with the 24 seeds we already have, expand to 50+)
+- `ingest/poll_authorities.py` for GitHub stars + events, Reddit, HN, OpenAlex
+- Newsletter mention-detection added to `ingest/summarize.py` (Haiku prompt)
+- `engagements` table populated
+- **done when**: querying `engagements` for `karpathy` since last 30 days returns ≥1 row from real polled data
+
+### Step 4 — Skill + orchestrator + researcher
+- `.claude/skills/deep-research/SKILL.md`
+- `.claude/agents/{orchestrator,researcher}.md`
+- `.claude/scratch/` directory + per-run dispatch
+- `mcp/corpus-server/server.py` with `search`, `find_by_authority`, `recent`, `fetch_detail`
+- Orchestrator implements RRF + authority + decay ranking
+- **done when**: `claude` → `/deep-research <query>` runs end-to-end against the partial corpus, returns a cited report saved to `reports/`
+
+### Step 5 — Eval skeleton + 5 seed cases
+- `evals/cases.yaml` already seeded
+- `evals/run_all.py` invokes `claude -p "/deep-research <query>"` per case (or programmatic Claude Agent SDK), captures the run trace from `evals/runs/<run-id>/`
+- Judge (Opus 4.7) scores behavioral criteria
+- All 5 cases will fail or be marked `blocked_until`. **That's the point** — we now have an objective signal of progress.
+- **done when**: `python -m evals run_all` produces `evals/runs/<week>-summary.md` with per-case pass/fail/blocked
+
+### Step 6 — Specialist subagents + forced passes
+- `.claude/agents/{contrarian,verifier,critic,synthesizer}.md`
+- Orchestrator dispatches in correct sequence: researchers → contrarian → recency-pass → synthesizer-draft → verifier → critic → synthesizer-final
+- Forced recency pass wired
+- Counter-position pass on recommendation queries
+- **done when**: re-run evals — recency case improves; contrarian case shows underrated alternatives; verifier catches a deliberately-fabricated citation in a synthetic test
+
+### Step 7 — Lab blog + Reddit + HN + HF Daily Papers ingestion
+- Adapters for ~30 lab blogs
+- Reddit PRAW adapter (with OAuth setup script)
+- HN Algolia adapter
+- HF Daily Papers adapter
+- **done when**: corpus contains real data from all four; `health()` reports green for all adapters
+
+### Step 8 — Benchmarks subsystem
+- Adapters for LMArena, Artificial Analysis, OpenRouter, LiveBench, GPQA, HLE, SWE-bench Verified, Aider Polyglot
+- Benchmark snapshots stored as timestamped JSON
+- `corpus-server` exposes benchmark queries (alongside main `search`)
+- **done when**: benchmark eval case passes ("What's Claude Opus 4.7 ELO on LMArena?")
+
+### Step 9 — Promoted arXiv pipeline
+- Detection: cited by authority (OpenAlex), mentioned in 2+ newsletters, GitHub-repo-with-100-stars heuristic
+- Promotion job: full PDF → text → summary → corpus markdown
+- **done when**: at least 5 promoted papers have full corpus entries
+
+### Step 10 — Podcast transcripts
+- `ingest/adapters/podcasts.py` with faster-whisper medium
+- Run as overnight batch
+- **done when**: latest episodes of 5 tracked podcasts have transcripts in corpus
+
+### Step 11 — Eval growth + weekly cadence
+- Add 5–15 more eval cases across all 5 categories
+- Weekly automated runs via systemd-timer
+- Score-history graphing (simple matplotlib script if useful)
+- **done when**: 4-week trend visible in `evals/runs/_history.jsonl`
+
+**Defer indefinitely**: Twitter/X, Postgres migration, langchain, Brave/SearXNG, dedicated reranker, Agent Teams.
+
+---
+
+## Verification approach
+
+**Integration smoke tests** (committed in `tests/`):
+- `test_ingest_idempotency.py` — re-running ingestion against a fixture changes nothing
+- `test_ranking_invariants.py` — synthetic corpus where authority-engaged docs provably rank above un-engaged at equal base score; recency decay measurable
+- `test_frontmatter_schema.py` — pydantic catches malformed frontmatter
+- `test_engagement_dedup.py` — `UNIQUE(authority_id, source_id, kind)` upholds
+- `test_corpus_server_mcp.py` — all 4 MCP tools return expected shapes against fixture
+
+**End-to-end smoke test**:
+- `make smoke` → spin up corpus with 10 fixture docs → run a known-good `/deep-research` query → assert non-empty report with ≥2 citations
+
+**Eval set is the merge gate**: `python -m evals run_all` is the canonical "is the system working" signal. Regressions block merges (when there is a CI; for now, manual discipline).
+
+---
+
+## Open questions (small, post-approval cleanup)
+
+1. **Corpus location** — default `./corpus/` gitignored is my assumption. Override if you want it elsewhere (e.g., `~/research-corpus/` so multiple repos share it).
+2. **Authority handle expansion** — current `authorities.yaml` has 24 seeds. Grow to ~50 before Step 3 ships, or ship and grow incrementally?
+3. **Promoted-arXiv full-text storage** — keep PDF + text + summary, or summary-only? My default: text + summary; skip PDF (re-fetchable).
+4. **Podcast cadence** — overnight batch is fine for me to assume, but you might prefer weekly batch. Either works.
+5. **Backup target** — `~/backup/` is my assumption. Override if you have a specific location (NAS, external drive path).
+
+These are small enough I can default reasonably and you can override if you disagree. I won't block on them.
+
+---
+
+## Decisions log (what changed across the iterations)
+
+| concern | original CLAUDE.md | post-Pass-1 plan | final plan (this doc) | reason |
+|---|---|---|---|---|
+| Storage | Postgres + pgvector + Alembic | (same) | markdown + sqlite + sqlite-vec | corpus is 25–50K docs over 5yr — not a relational-DB problem; Claude Code's file tools work directly on markdown |
+| Loop framework | hand-built around Claude Code | hand-built around Claude Code | native `.claude/skills/` + `.claude/agents/` | Skills are the recommended pattern in 2026 |
+| Subagent fan-out | "parallel" assumed | parallel | **sequential** (Agent Teams deferred) | Pass-2 research: native subagents are sequential; parallel requires experimental opt-in |
+| Embedding model | bge-large-en-v1.5 | Qwen3-Embedding-0.6B | **snowflake-arctic-embed-s** (33M, 384-dim) | corpus too small for big models; arctic beats bge-small on BEIR with cleaner license |
+| Live web | Brave + Firecrawl MCPs | SearXNG | **Claude Code's native WebSearch + WebFetch** | covered by $200 Max; no extra cost |
+| Twitter | Tier 3 (build last) | $12/mo Apify or Nitter | **deferred indefinitely** | X landscape too unstable; AINews/Reddit/HN are proxies |
+| Smol AI / AINews | bundled with newsletters | bundled | **Tier 1, build first** | partially compensates for no Twitter |
+| Contrarian | counter-position pass implicit | first-class subagent | first-class subagent + structural prompt | the actual structural answer to the Karpathy-wiki failure |
+| Tool name | `Task` | `Task` | **`Agent`** | renamed in v2.1.63 |
+| Slash command | `.claude/commands/` | `.claude/commands/` | **`.claude/skills/`** | recommended in 2026 |
+| Process supervision | Docker Compose worker | cron | **systemd-timer with Persistent=true** | survives overnight shutdowns |
+| Vector lib | pgvector HNSW | sqlite-vec HNSW | **sqlite-vec brute-force `vec0`** | brute force at 50K is sub-ms; ANN buys nothing at this scale |
+| Hybrid retrieval | unspec'd | "RRF" | **RRF k=60, no normalization, top-100 each side** | RRF beats min-max/z-score on hybrid (arXiv 2508.01405) |
+| Cost cap | $5/run dollars | per-run quota | **per-run token budget (~250K input + 50K output)** | Anthropic doesn't expose remaining-quota; estimate is good enough |
+| Re-embedding | "pin and never change" | "pin and never change" | **plan for every 12–18mo** | small embedding models improve 1–3 MTEB pts/yr; chunker version pinned alongside model |
+| Subagent output | unspec'd | freeform text | **structured payloads in `.claude/scratch/<run-id>/`** | subagents return text only; scratch dir bypasses limitation |
+
+---
+
+## What's NOT in this plan (scope discipline)
+
+- Web UI, mobile, multi-user, accounts, SSO
+- Cost dashboards beyond the per-run ledger
+- Notifications / email / push (NOTES.md is the alert surface)
+- A "general-purpose" deep-research tool — this is AI/ML-domain-specific by design
+- Real-time / streaming retrieval — batch ingestion + on-demand research
+- A custom reranker model (deferred until evals demand)
+- Twitter/X (deferred indefinitely)
+- Postgres, pgvector, Alembic, Docker Compose for the DB, langchain (rejected)
+
+---
+
+## Maintenance commitment
+
+~30 minutes/week:
+- Review `config/authorities.yaml` for adds/drops
+- Skim NOTES.md for source breakages
+- Read latest `evals/runs/<week>-summary.md`
+- Spot-check 2–3 recent reports for quality
+
+Without this, the moat decays. The system silently turns into a slower version of Claude Research.
+
+---
+
+## Final summary
+
+**What we're building**: a personal AI/ML research assistant that runs entirely inside Claude Code (CLI), with a markdown corpus continuously fed by free-tier APIs, indexed by a small sqlite sidecar, and queried through a 6-subagent loop that explicitly fights SEO bias via a contrarian agent and forced recency pass.
+
+**What makes it different from Claude Research**: a curated authority graph that boosts content from people the user personally trusts, structural mechanisms in the loop that fight the "obvious answer" trap, and a continuously-fed local corpus that already contains what was published yesterday.
+
+**Total cost**: $0 beyond the existing $200 Claude Max subscription.
+
+**Time to first usable version**: roughly Steps 1–6 (skeleton + 4 newsletters + embeddings + authority graph + skill + 4 specialist subagents). Each step is small enough to ship independently.
+
+**Confidence in the plan after 4 passes of analysis + research verification**: high on architecture and stack choices; medium on the eval framework (will iterate); low on Twitter compensation (we'll learn whether AINews+Reddit+HN actually fills the gap once we use the system for a month).
+
+Push back on anything before I touch a line of code or rewrite the obsolete docs/*.
