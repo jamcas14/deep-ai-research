@@ -81,8 +81,15 @@ class HNAdapter:
 
     @staticmethod
     def _parse_hit(hit: dict) -> RawSource | None:
-        # Prefer the externally-linked URL; fall back to the HN item URL.
-        url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+        # Canonical URL is ALWAYS the HN comment thread (not the external link).
+        # The HN post is the source; the linked URL is something the post
+        # references. Using the external URL would collide source_ids with
+        # the original article when we also ingest it (e.g., arxiv papers).
+        object_id = hit.get("objectID")
+        if not object_id:
+            return None
+        url = f"https://news.ycombinator.com/item?id={object_id}"
+        external_url = hit.get("url") or ""
         title = hit.get("title") or ""
         if not title:
             return None
@@ -100,9 +107,16 @@ class HNAdapter:
             f"By {author} on Hacker News. "
             f"Points: {hit.get('points', 0)}. "
             f"Comments: {hit.get('num_comments', 0)}.\n\n"
-            f"Original link: {hit.get('url') or 'self post'}\n\n"
-            f"HN: https://news.ycombinator.com/item?id={hit.get('objectID')}\n"
+            f"Original link: {external_url or 'self post'}\n\n"
+            f"HN: {url}\n"
         )
+        # If the post links to an arXiv paper, surface that as a mentioned
+        # entity so cross-reference still works for the moat.
+        mentioned: list[str] = []
+        if external_url and "arxiv.org/abs/" in external_url:
+            arxiv_id = external_url.split("arxiv.org/abs/")[1].split("?")[0].rstrip("/")
+            if arxiv_id:
+                mentioned.append(arxiv_id)
         return RawSource(
             url=url,
             title=title,
@@ -113,6 +127,7 @@ class HNAdapter:
             body=body,
             content_format="markdown",
             tags=["hn"],
+            mentioned_entities=mentioned,
         )
 
 
