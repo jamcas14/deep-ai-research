@@ -55,8 +55,13 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 **Embedding install + run (2026-05-03 evening):**
 - First attempt failed: pyproject had `[dependency-groups] embed`, but `uv sync --extra` requires `[project.optional-dependencies]`. Fixed by moving `embed` and `podcasts` groups; kept `dev` in `[dependency-groups]` since it's dev-only.
 - After fix: `uv sync --extra embed` installed sentence-transformers 5.4.1, torch 2.11.0, transformers 5.7.0, huggingface_hub 1.13.0, onnxruntime 1.25.1. Final venv 4.9GB.
-- `uv run python -m ingest.embed_pending` started in background (task id `b2kw8fo63`). Snowflake-arctic-embed-s downloaded successfully (197 weight shards loaded in <1s). Encoding 685 corpus markdown files now. Estimated 1–6 CPU-hours.
-- Output streamed to `/tmp/claude-1000/-home-jamie-code-projects-claude-deep-research-ai-domain/a19b36ff-88ee-439f-942e-bdad04ce8240/tasks/b2kw8fo63.output` — `tail -f` to watch progress.
+- **Embedding completed in ~3 minutes** (massively faster than my 1–6 CPU-hour estimate — corpus is small, arctic-s is 33M params, batch encoding is efficient on modern CPUs):
+  - 665 of 685 sources embedded successfully
+  - 1,124 total chunks (avg 1.69 chunks/source)
+  - 1,124 vectors in `embeddings` virtual table
+  - `pin_versions`: `chunker=v1`, `embed_model=snowflake-arctic-embed-s`
+  - sqlite file size: 5.1 MB
+  - 20 sources skipped — **all had empty bodies** (most recent AINews issues from late-April/early-May 2026; feed delivers headline before body is published). Not a bug; idempotency will re-ingest them with body on future runs once content_hash changes.
 
 **Deferred to next session:**
 - **Step 3**: authority polling. `ingest/poll_authorities.py` for GitHub stars/events (using the GitHub PAT now in `.env`), Reddit/HN, OpenAlex citations. Backfill engagements for the 24 seed authorities against existing corpus.
