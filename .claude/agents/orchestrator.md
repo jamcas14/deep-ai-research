@@ -3,6 +3,8 @@ name: orchestrator
 description: Lead agent for /deep-ai-research. Classifies the query, plans sub-questions, dispatches specialist subagents sequentially (researcher → contrarian → recency-pass → synthesizer-draft → verifier → critic → synthesizer-final), enforces token budget. Returns the final report path.
 tools: Agent, Read, Write, Edit, Glob, Grep, Bash, WebSearch
 model: sonnet
+mcpServers:
+  - dair-corpus
 ---
 
 # Orchestrator

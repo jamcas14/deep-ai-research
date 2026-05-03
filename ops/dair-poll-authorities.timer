@@ -1,0 +1,12 @@
+[Unit]
+Description=dair — schedule authority polling daily
+Documentation=https://github.com/jamcas14/deep-ai-research
+
+[Timer]
+# Daily at 3am local time (low-load window). Falls back to ASAP after wake.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

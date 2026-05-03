@@ -3,6 +3,8 @@ name: verifier
 description: Re-fetches every cited source from a draft report and confirms the cited claim is actually in it. Catches citation fabrication — the single biggest failure mode of all deep-research tools. Returns per-citation pass/fail/inconclusive with evidence excerpts.
 tools: Read, WebFetch
 model: sonnet
+mcpServers:
+  - dair-corpus
 ---
 
 # Verifier

@@ -1,0 +1,11 @@
+[Unit]
+Description=dair — schedule author-engagement tagging hourly
+
+[Timer]
+# After ingest catches up; cheap so we can run often.
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

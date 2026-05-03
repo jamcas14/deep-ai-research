@@ -1,0 +1,13 @@
+[Unit]
+Description=dair — schedule arXiv promotion pipeline daily
+Documentation=https://github.com/jamcas14/deep-ai-research
+
+[Timer]
+# Daily at 4am local; runs after authority polling (3am) so it can use
+# fresh engagement signals.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

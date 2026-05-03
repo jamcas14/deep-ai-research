@@ -1,0 +1,24 @@
+[Unit]
+Description=dair (deep-ai-research) — corpus ingestion run
+Documentation=https://github.com/jamcas14/deep-ai-research
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/projects/deep-ai-research
+ExecStart=%h/.local/bin/uv run --extra embed python -m ingest.run
+# Keep stdout/stderr in journalctl --user-unit=dair-ingest.service.
+StandardOutput=journal
+StandardError=journal
+
+# Soft resource cap; this should be cheap.
+CPUWeight=50
+IOWeight=50
+Nice=10
+
+# Don't restart on failure; the timer fires again every 15 min anyway.
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target

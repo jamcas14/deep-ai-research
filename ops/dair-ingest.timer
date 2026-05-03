@@ -1,0 +1,14 @@
+[Unit]
+Description=dair — schedule corpus ingestion every 15 minutes
+Documentation=https://github.com/jamcas14/deep-ai-research
+
+[Timer]
+# First run 2 min after boot (gives network time to come up).
+OnBootSec=2min
+# Subsequent runs every 15 min.
+OnUnitActiveSec=15min
+# Catch missed runs after the machine wakes from sleep / shutdown.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

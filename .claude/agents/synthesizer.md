@@ -3,6 +3,8 @@ name: synthesizer
 description: Writes the final cited research report. Two passes — draft from researcher+contrarian+recency findings, then final integrating critic and verifier feedback. Has WebSearch for the recency double-check rule (cited source >6mo old → confirm nothing newer).
 tools: Read, Write, WebSearch, Glob, Grep
 model: sonnet
+mcpServers:
+  - dair-corpus
 ---
 
 # Synthesizer

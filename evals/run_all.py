@@ -39,16 +39,32 @@ log = logging.getLogger("evals.run_all")
 
 # ---------- behavioral assertions ----------
 
-def assert_must_mention(hits: list[dict[str, Any]], terms: list[str]) -> tuple[bool, str]:
-    """At least one hit's text/snippet/url must mention one of `terms`."""
-    haystack = " ".join(
-        f"{h.get('snippet', '')} {h.get('title_or_url', '')} {' '.join(h.get('tags', []))}"
-        for h in hits
-    ).lower()
-    matched = [t for t in terms if t.lower() in haystack]
+def assert_must_mention(hits: list[dict[str, Any]], terms: list) -> tuple[bool, str]:
+    """At least one hit's text/snippet/url/publication/authors must mention
+    one of `terms`.
+
+    `terms` accepts:
+      - "string" (literal substring match)
+      - {"any of": ["a", "b"]} (substring match against any of)
+    """
+    parts: list[str] = []
+    for h in hits:
+        parts.append(h.get("snippet") or "")
+        parts.append(h.get("title_or_url") or "")
+        parts.append(h.get("publication") or "")
+        parts.append(" ".join(h.get("tags") or []))
+        parts.append(" ".join(h.get("mentioned_authorities") or []))
+    haystack = " ".join(parts).lower()
+    flat: list[str] = []
+    for t in terms:
+        if isinstance(t, str):
+            flat.append(t)
+        elif isinstance(t, dict) and "any of" in t:
+            flat.extend(t["any of"])
+    matched = [t for t in flat if t.lower() in haystack]
     if matched:
-        return True, f"matched: {matched}"
-    return False, f"none of {terms} found in {len(hits)} hits"
+        return True, f"matched: {matched[:3]}{'...' if len(matched) > 3 else ''}"
+    return False, f"none of {flat} found in {len(hits)} hits"
 
 
 def assert_must_not_mention(hits: list[dict[str, Any]], terms: list[str]) -> tuple[bool, str]:

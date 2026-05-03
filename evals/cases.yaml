@@ -110,3 +110,117 @@ cases:
         the last LMArena snapshot). Failure means either staleness alert is
         appropriate or the LMArena adapter is broken.
     blocked_until: step_8_benchmarks
+
+  # ============ Expansion batch 2 (2026-05-03) ============
+
+  - id: recency_kimi_k2_release
+    category: recency
+    query: |
+      What's the latest from Kimi (Moonshot) — what model versions exist?
+    expected:
+      must_mention:
+        - "Kimi"
+      reasoning: |
+        Kimi K2 / K2.5 / K2.6 all shipped in 2025-26. A working recency pass
+        should surface the most-recent variant, not the first one.
+
+  - id: recency_qwen_releases
+    category: recency
+    query: |
+      What's the most recent Qwen model from Alibaba?
+    expected:
+      must_mention:
+        - "Qwen"
+      reasoning: |
+        Same recency stress-test pattern as DeepSeek; Qwen ships often. Should
+        find a 2026 reference, not a 2024 one.
+
+  - id: authority_simon_willison_recommendation
+    category: authority
+    query: |
+      What does Simon Willison recommend for local LLM tooling?
+    expected:
+      must_mention:
+        - "Simon Willison"
+      reasoning: |
+        Simon Willison is in the authority graph (canonical, weight 0.8) and
+        posts daily on his blog. A working authority-weighted retrieval
+        should surface his content for tooling-recommendation queries.
+
+  - id: counter_position_rag_dead
+    category: counter_position
+    query: |
+      Is RAG dead now that context windows are huge?
+    expected:
+      must_mention:
+        - "RAG"
+      must_not_mention_only:
+        - "RAG is dead"
+      reasoning: |
+        Recurring debate; corpus should surface both "RAG is dead" takes AND
+        their rebuttals. Full counter-position verification requires the
+        contrarian subagent to actually fire (Step 6 done).
+
+  - id: counter_position_open_vs_closed
+    category: counter_position
+    query: |
+      Should I build on open-weight models or frontier closed models?
+    expected:
+      must_mention:
+        - any of: ["DeepSeek", "Qwen", "Llama", "Mistral"]
+      reasoning: |
+        Recommendation query. Both sides should be surfaced; corpus has both
+        open-weight enthusiasm (LocalLLaMA-style) and closed-frontier coverage.
+
+  - id: verification_anthropic_multi_agent
+    category: verification
+    query: |
+      Has Anthropic published research on multi-agent orchestration?
+    expected:
+      must_mention:
+        - "Anthropic"
+      reasoning: |
+        Anthropic published their multi-agent research in 2025. The verifier
+        subagent (Step 6) should re-fetch any cited Anthropic URL and
+        confirm the claim. Without orchestration, this case just checks
+        that retrieval surfaces Anthropic-published content.
+
+  - id: benchmark_top_openrouter
+    category: benchmark
+    query: |
+      Top 5 models by context length on OpenRouter
+    expected:
+      benchmark_returns:
+        kind: benchmark_top
+        benchmark: openrouter
+        n: 5
+      reasoning: |
+        We DO have OpenRouter snapshots (Step 8). benchmark_top("openrouter", 5)
+        should return Grok-4-series at 2M ctx. Validates the benchmarks
+        subsystem end-to-end. Not run via search() — runs against the
+        benchmarks module directly. Behavioral check only at this layer.
+
+  - id: exploration_mamba_state_space
+    category: exploration
+    query: |
+      How do state-space models (Mamba) work and where do they fit relative
+      to transformers?
+    expected:
+      must_mention:
+        - any of: ["Mamba", "state-space", "SSM", "Albert Gu"]
+      reasoning: |
+        Albert Gu is in the authority graph (canonical 0.9). Corpus should
+        surface explanatory content. Open-ended exploration; no contrarian
+        needed but recency_pass should still fire.
+
+  - id: exploration_long_context_methods
+    category: exploration
+    query: |
+      What approaches to extending LLM context windows beyond 1M tokens
+      have shipped recently?
+    expected:
+      must_mention:
+        - "context"
+      reasoning: |
+        Mixture of recent papers (HF Daily Papers should have several) plus
+        ongoing newsletter coverage. Stresses the cross-source retrieval.

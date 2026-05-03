@@ -1,0 +1,19 @@
+[Unit]
+Description=dair — daily authority engagement polling (GitHub stars + events)
+Documentation=https://github.com/jamcas14/deep-ai-research
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/projects/deep-ai-research
+ExecStart=%h/.local/bin/uv run python -m ingest.poll_authorities -v
+StandardOutput=journal
+StandardError=journal
+CPUWeight=30
+IOWeight=30
+Nice=15
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target
