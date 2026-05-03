@@ -45,10 +45,125 @@ newsletters:
 # - the_gradient: https://thegradient.pub/rss/
 # - alphasignal, bens_bites, davis_papers, deep_learning_weekly, the_sequence: TBD
 
-lab_blogs: []      # Step 7
-reddit: []         # Step 7
-hn: []             # Step 7
-hf_daily_papers: [] # Step 7
+# Lab / org / individual blogs. Most are RSS; entries without per-name
+# Python modules get a generic RSSAdapter (see ingest/run.py:load_adapter).
+lab_blogs:
+  - name: anthropic_news
+    enabled: true
+    publication: "Anthropic News"
+    feed_url: "https://www.anthropic.com/news/rss.xml"
+    source_type: lab_blog
+    poll_interval_seconds: 21600
+    rate_limit_key: anthropic.com
+
+  - name: openai_blog
+    enabled: true
+    publication: "OpenAI Blog"
+    feed_url: "https://openai.com/blog/rss.xml"
+    source_type: lab_blog
+    poll_interval_seconds: 21600
+    rate_limit_key: openai.com
+
+  - name: deepmind_blog
+    enabled: true
+    publication: "Google DeepMind"
+    feed_url: "https://deepmind.google/blog/rss.xml"
+    source_type: lab_blog
+    poll_interval_seconds: 21600
+    rate_limit_key: deepmind.google
+
+  - name: meta_ai
+    enabled: true
+    publication: "Meta AI Research"
+    feed_url: "https://ai.meta.com/blog/rss/"
+    source_type: lab_blog
+    poll_interval_seconds: 21600
+    rate_limit_key: ai.meta.com
+
+  - name: huggingface_blog
+    enabled: true
+    publication: "HuggingFace Blog"
+    feed_url: "https://huggingface.co/blog/feed.xml"
+    source_type: lab_blog
+    poll_interval_seconds: 21600
+    rate_limit_key: huggingface.co
+
+  - name: simon_willison
+    enabled: true
+    publication: "Simon Willison's Weblog"
+    feed_url: "https://simonwillison.net/atom/everything/"
+    source_type: blog_post
+    poll_interval_seconds: 14400
+    rate_limit_key: simonwillison.net
+
+  - name: lilian_weng
+    enabled: true
+    publication: "Lil'Log (Lilian Weng)"
+    feed_url: "https://lilianweng.github.io/index.xml"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: lilianweng.github.io
+
+  - name: eugene_yan
+    enabled: true
+    publication: "Eugene Yan"
+    feed_url: "https://eugeneyan.com/rss/"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: eugeneyan.com
+
+  - name: sebastian_raschka
+    enabled: true
+    publication: "Ahead of AI (Sebastian Raschka)"
+    feed_url: "https://magazine.sebastianraschka.com/feed"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: magazine.sebastianraschka.com
+
+  - name: interconnects
+    enabled: true
+    publication: "Interconnects (Nathan Lambert)"
+    feed_url: "https://www.interconnects.ai/feed"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: interconnects.ai
+
+  - name: chip_huyen
+    enabled: true
+    publication: "Chip Huyen"
+    feed_url: "https://huyenchip.com/feed.xml"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: huyenchip.com
+
+  - name: the_gradient
+    enabled: true
+    publication: "The Gradient"
+    feed_url: "https://thegradient.pub/rss/"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: thegradient.pub
+
+  - name: the_batch
+    enabled: false  # 404 on /feed/ — verify correct URL before re-enabling
+    publication: "The Batch (DeepLearning.AI)"
+    feed_url: "https://www.deeplearning.ai/the-batch/feed/"
+    source_type: blog_post
+    poll_interval_seconds: 86400
+    rate_limit_key: deeplearning.ai
+
+reddit: []         # Step 7b — needs Reddit OAuth credentials in .env
+
+hn:
+  - name: hn
+    enabled: true
+    publication: "Hacker News (AI filter)"
+    source_type: hn_post
+    poll_interval_seconds: 14400
+    rate_limit_key: hn-algolia
+    # HN adapter has its own .py module (custom JSON, not RSS).
+
+hf_daily_papers: [] # Step 9 — HF Daily Papers
 podcasts: []       # Step 10
 benchmarks: []     # Step 8
 

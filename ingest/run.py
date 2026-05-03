@@ -51,12 +51,33 @@ def acquire_lock(path: Path) -> int | None:
     return fd  # type: ignore[return-value]
 
 
-def load_adapter(name: str) -> Adapter:
-    """Import ingest.adapters.<name> and call its build() factory."""
-    module = importlib.import_module(f"ingest.adapters.{name}")
-    if not hasattr(module, "build"):
-        raise RuntimeError(f"adapter {name} has no build() function")
-    return module.build()
+def load_adapter(name: str, *, spec: dict | None = None) -> Adapter:
+    """Resolve an adapter by name. First try ingest.adapters.<name>.build();
+    fall back to instantiating a generic RSSAdapter from the sources.yaml spec.
+    """
+    try:
+        module = importlib.import_module(f"ingest.adapters.{name}")
+        if hasattr(module, "build"):
+            return module.build()
+    except ImportError:
+        pass
+
+    if not spec:
+        raise RuntimeError(f"no adapter module ingest.adapters.{name} and no fallback spec given")
+
+    # Fallback: generic RSS-style adapter from yaml fields.
+    from ingest.adapters._rss import RSSAdapter
+    feed_url = spec.get("feed_url")
+    if not feed_url:
+        raise RuntimeError(f"adapter {name} has no feed_url; can't build generic RSS adapter")
+    return RSSAdapter(
+        name=name,
+        publication=spec.get("publication", name),
+        feed_url=feed_url,
+        source_type=spec.get("source_type", "blog_post"),
+        poll_interval_seconds=spec.get("poll_interval_seconds", 21600),
+        rate_limit_key=spec.get("rate_limit_key", "default"),
+    )
 
 
 def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None:
@@ -174,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             name = spec["name"]
             try:
-                adapter = load_adapter(name)
+                adapter = load_adapter(name, spec=spec)
             except Exception as e:  # noqa: BLE001
                 log.error("failed to load adapter %s: %s", name, e)
                 continue
