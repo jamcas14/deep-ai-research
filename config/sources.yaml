@@ -152,7 +152,81 @@ lab_blogs:
     poll_interval_seconds: 86400
     rate_limit_key: deeplearning.ai
 
-reddit: []         # Step 7b — needs Reddit OAuth credentials in .env
+# Subreddits. Adapter no-ops gracefully if REDDIT_* creds are missing in .env.
+# To enable: register a Reddit app at https://www.reddit.com/prefs/apps (script
+# type) and put the credentials in .env. Free tier is 100 QPM with OAuth.
+reddit:
+  - name: reddit_localllama
+    enabled: true
+    publication: "r/LocalLLaMA"
+    subreddit: LocalLLaMA
+    source_type: reddit_post
+    poll_interval_seconds: 14400
+    rate_limit_key: reddit
+
+  - name: reddit_machinelearning
+    enabled: true
+    publication: "r/MachineLearning"
+    subreddit: MachineLearning
+    source_type: reddit_post
+    poll_interval_seconds: 14400
+    rate_limit_key: reddit
+
+  - name: reddit_ai_agents
+    enabled: true
+    publication: "r/AI_Agents"
+    subreddit: AI_Agents
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
+
+  - name: reddit_deeplearning
+    enabled: true
+    publication: "r/deeplearning"
+    subreddit: deeplearning
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
+
+  - name: reddit_mlpapers
+    enabled: true
+    publication: "r/MLPapers"
+    subreddit: MLPapers
+    source_type: reddit_post
+    poll_interval_seconds: 86400
+    rate_limit_key: reddit
+
+  - name: reddit_llmdevs
+    enabled: true
+    publication: "r/LLMDevs"
+    subreddit: LLMDevs
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
+
+  - name: reddit_singularity
+    enabled: true
+    publication: "r/singularity"
+    subreddit: singularity
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
+
+  - name: reddit_claude_ai
+    enabled: true
+    publication: "r/ClaudeAI"
+    subreddit: ClaudeAI
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
+
+  - name: reddit_openai
+    enabled: true
+    publication: "r/OpenAI"
+    subreddit: OpenAI
+    source_type: reddit_post
+    poll_interval_seconds: 21600
+    rate_limit_key: reddit
 
 hn:
   - name: hn

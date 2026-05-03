@@ -13,14 +13,14 @@ The system fixes both via a continuously-ingested local corpus + a hand-curated 
 
 ## Architecture in one paragraph
 
-Six native Claude Code subagents (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`) in `.claude/agents/`. A `/deep-research` skill in `.claude/skills/deep-research/`. Subagents dispatched **sequentially** (parallel requires experimental Agent Teams — deferred). Markdown corpus in `./corpus/` (gitignored). Tiny sqlite sidecar (`corpus/_index.sqlite`) holds engagement edges + embeddings via sqlite-vec brute-force `vec0`. Ingestion via Python adapters under `ingest/adapters/`, scheduled by systemd-timer. Live web via Claude Code's built-in `WebSearch` / `WebFetch` (no Brave, no SearXNG). Embeddings via `snowflake-arctic-embed-s` (33M params, 384-dim, Apache-2.0). Hybrid retrieval: ripgrep BM25 + vector cosine, RRF k=60, no score normalization.
+Six native Claude Code subagents (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`) in `.claude/agents/`. A `/deep-ai-research` skill in `.claude/skills/deep-ai-research/`. Subagents dispatched **sequentially** (parallel requires experimental Agent Teams — deferred). Markdown corpus in `./corpus/` (gitignored). Tiny sqlite sidecar (`corpus/_index.sqlite`) holds engagement edges + embeddings via sqlite-vec brute-force `vec0`. Ingestion via Python adapters under `ingest/adapters/`, scheduled by systemd-timer. Live web via Claude Code's built-in `WebSearch` / `WebFetch` (no Brave, no SearXNG). Embeddings via `snowflake-arctic-embed-s` (33M params, 384-dim, Apache-2.0). Hybrid retrieval: ripgrep BM25 + vector cosine, RRF k=60, no score normalization.
 
 ## How you actually use it
 
 ```
 cd ~/code/projects/claude-deep-research-ai-domain
 claude
-/deep-research What memory systems should I look at for an LLM-based agent?
+/deep-ai-research What memory systems should I look at for an LLM-based agent?
 ```
 
 The orchestrator classifies the query, dispatches researchers (sequential), then a contrarian to find the underrated answer, runs a forced recency pass, has the synthesizer write a report, has the verifier re-check every citation, has the critic flag missing perspectives, then writes the final report to `reports/YYYY-MM-DD-slug.md`.

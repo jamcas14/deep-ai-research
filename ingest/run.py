@@ -65,7 +65,26 @@ def load_adapter(name: str, *, spec: dict | None = None) -> Adapter:
     if not spec:
         raise RuntimeError(f"no adapter module ingest.adapters.{name} and no fallback spec given")
 
-    # Fallback: generic RSS-style adapter from yaml fields.
+    source_type = spec.get("source_type", "blog_post")
+
+    # Reddit fallback: source_type == reddit_post, needs subreddit name.
+    if source_type == "reddit_post":
+        from ingest.adapters._reddit import RedditAdapter
+        subreddit = spec.get("subreddit")
+        if not subreddit:
+            raise RuntimeError(f"adapter {name} has source_type=reddit_post but no subreddit field")
+        return RedditAdapter(
+            name=name,
+            publication=spec.get("publication", f"r/{subreddit}"),
+            subreddit=subreddit,
+            source_type=source_type,
+            poll_interval_seconds=spec.get("poll_interval_seconds", 14400),
+            rate_limit_key=spec.get("rate_limit_key", "reddit"),
+            posts_limit=spec.get("posts_limit", 100),
+            top_comments=spec.get("top_comments", 3),
+        )
+
+    # Generic RSS-style adapter from yaml fields.
     from ingest.adapters._rss import RSSAdapter
     feed_url = spec.get("feed_url")
     if not feed_url:
@@ -74,7 +93,7 @@ def load_adapter(name: str, *, spec: dict | None = None) -> Adapter:
         name=name,
         publication=spec.get("publication", name),
         feed_url=feed_url,
-        source_type=spec.get("source_type", "blog_post"),
+        source_type=source_type,
         poll_interval_seconds=spec.get("poll_interval_seconds", 21600),
         rate_limit_key=spec.get("rate_limit_key", "default"),
     )

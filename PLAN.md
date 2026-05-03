@@ -35,7 +35,7 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 ├── .claude/
 │   ├── skills/
 │   │   └── deep-research/
-│   │       └── SKILL.md               # /deep-research <question> entry point
+│   │       └── SKILL.md               # /deep-ai-research <question> entry point
 │   ├── agents/
 │   │   ├── orchestrator.md
 │   │   ├── researcher.md
@@ -104,7 +104,7 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 1. **Markdown-first corpus.** Each ingested item is a `.md` file with YAML frontmatter. Claude Code's native `Read`/`Glob`/`Grep` reads them directly.
 2. **One small sqlite sidecar** (`corpus/_index.sqlite`) — engagement edges, embedding vectors, chunker/model versions. No Postgres, no pgvector, no Alembic.
 3. **Native Claude Code subagents** in `.claude/agents/`. `Agent` tool (renamed from `Task` in v2.1.63) for invocation. **Sequential** dispatch (parallel requires experimental `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — defer to v2).
-4. **Skill, not command** — `.claude/skills/deep-research/SKILL.md` is the entry point.
+4. **Skill, not command** — `.claude/skills/deep-ai-research/SKILL.md` is the entry point.
 5. **Subagent output coordination via scratch dir.** `.claude/scratch/<run-id>/<role>.{md,json}` — orchestrator reads/writes structured findings; bypasses the "subagents return only free text" limitation.
 6. **Live web is Claude Code's `WebSearch` + `WebFetch`.** Covered by the $200 Max plan. No Brave, no SearXNG, no separate web-search MCP.
 7. **Cost cap** is a per-run *token budget* (~250K input + 50K output max), enforced by orchestrator's running tally. Anthropic doesn't expose remaining-quota; estimate is good enough.
@@ -117,7 +117,7 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 ### Foreground (a research session)
 
 1. `cd ~/code/projects/claude-deep-research-ai-domain && claude`
-2. `/deep-research <question>`
+2. `/deep-ai-research <question>`
 3. Skill loads orchestrator subagent.
 4. Orchestrator classifies query (recency / verification / exploration / recommendation / benchmark).
 5. Orchestrator generates a `<run-id>`, creates `.claude/scratch/<run-id>/`, plans 3–5 sub-questions.
@@ -693,16 +693,16 @@ Update or remove the existing `docs/*` (Postgres-era; mostly wrong). Trim CLAUDE
 - **done when**: querying `engagements` for `karpathy` since last 30 days returns ≥1 row from real polled data
 
 ### Step 4 — Skill + orchestrator + researcher
-- `.claude/skills/deep-research/SKILL.md`
+- `.claude/skills/deep-ai-research/SKILL.md`
 - `.claude/agents/{orchestrator,researcher}.md`
 - `.claude/scratch/` directory + per-run dispatch
 - `mcp/corpus-server/server.py` with `search`, `find_by_authority`, `recent`, `fetch_detail`
 - Orchestrator implements RRF + authority + decay ranking
-- **done when**: `claude` → `/deep-research <query>` runs end-to-end against the partial corpus, returns a cited report saved to `reports/`
+- **done when**: `claude` → `/deep-ai-research <query>` runs end-to-end against the partial corpus, returns a cited report saved to `reports/`
 
 ### Step 5 — Eval skeleton + 5 seed cases
 - `evals/cases.yaml` already seeded
-- `evals/run_all.py` invokes `claude -p "/deep-research <query>"` per case (or programmatic Claude Agent SDK), captures the run trace from `evals/runs/<run-id>/`
+- `evals/run_all.py` invokes `claude -p "/deep-ai-research <query>"` per case (or programmatic Claude Agent SDK), captures the run trace from `evals/runs/<run-id>/`
 - Judge (Opus 4.7) scores behavioral criteria
 - All 5 cases will fail or be marked `blocked_until`. **That's the point** — we now have an objective signal of progress.
 - **done when**: `python -m evals run_all` produces `evals/runs/<week>-summary.md` with per-case pass/fail/blocked
@@ -757,7 +757,7 @@ Update or remove the existing `docs/*` (Postgres-era; mostly wrong). Trim CLAUDE
 - `test_corpus_server_mcp.py` — all 4 MCP tools return expected shapes against fixture
 
 **End-to-end smoke test**:
-- `make smoke` → spin up corpus with 10 fixture docs → run a known-good `/deep-research` query → assert non-empty report with ≥2 citations
+- `make smoke` → spin up corpus with 10 fixture docs → run a known-good `/deep-ai-research` query → assert non-empty report with ≥2 citations
 
 **Eval set is the merge gate**: `python -m evals run_all` is the canonical "is the system working" signal. Regressions block merges (when there is a CI; for now, manual discipline).
 

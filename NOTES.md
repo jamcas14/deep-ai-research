@@ -36,7 +36,7 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - AINews ingestion is **fully working**. Files dated up to 2026-05-01 (one day pre-current). Frontmatter validated by pydantic. Stable source_ids via `sha256(canonical_url)[:16]`.
 - 25 unit tests passing (canonicalize, frontmatter round-trip, chunker invariants).
 - Step 2 scaffold: `ingest/_index.py` (sqlite schema with vec0 virtual table for embeddings, engagements, pin_versions, run_costs, adapter_health), `ingest/chunk.py` (versioned chunker — v1 paragraph-aware), `ingest/embed.py` (snowflake-arctic-embed-s interface; lazy import of sentence-transformers from `--extra embed`), `ingest/embed_pending.py` (CLI). sqlite-vec v0.1.9 loaded successfully via pysqlite3-binary 3.51.1.
-- Step 4 scaffold: `.claude/skills/deep-research/SKILL.md` + 6 agent files (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`). System prompts substantive; they call out the structural fixes (forced recency pass, contrarian as first-class, verifier discipline against fabrication).
+- Step 4 scaffold: `.claude/skills/deep-ai-research/SKILL.md` + 6 agent files (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`). System prompts substantive; they call out the structural fixes (forced recency pass, contrarian as first-class, verifier discipline against fabrication).
 
 **Project rename (2026-05-03 evening):**
 - Project renamed twice in same session as user iterated on the name. Final: **`deep-ai-research`** (codename **`dair`**). Previous: `claude-deep-research-ai-domain` → `deep-research-ai-related (drair)` → `deep-ai-research (dair)`. Directory at `/home/jamie/code/projects/deep-ai-research`.
@@ -65,8 +65,8 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 
 **Deferred to next session:**
 - **Step 3**: authority polling. `ingest/poll_authorities.py` for GitHub stars/events (using the GitHub PAT now in `.env`), Reddit/HN, OpenAlex citations. Backfill engagements for the 24 seed authorities against existing corpus.
-- **Step 5**: eval framework. `evals/run_all.py` invokes `claude -p "/deep-research <query>"` per case, captures the run trace from `.claude/scratch/<run-id>/`, judges behaviorally.
-- **Try the loop**: corpus + agents are in place. After embeddings finish, run `claude` and try `/deep-research <topic>` to see the loop fire end-to-end.
+- **Step 5**: eval framework. `evals/run_all.py` invokes `claude -p "/deep-ai-research <query>"` per case, captures the run trace from `.claude/scratch/<run-id>/`, judges behaviorally.
+- **Try the loop**: corpus + agents are in place. After embeddings finish, run `claude` and try `/deep-ai-research <topic>` to see the loop fire end-to-end.
 - **Verify embedding completion**: when bg task `b2kw8fo63` finishes, check that `corpus/_index.sqlite` has rows in `embeddings` table for ~all 685 sources. Sample query: `SELECT COUNT(DISTINCT source_id) FROM chunks` and `SELECT COUNT(*) FROM embeddings`.
 
 **To know for fresh session:**
@@ -90,10 +90,10 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Hybrid retrieval: FTS5 BM25 + sqlite-vec cosine, fused via RRF k=60. Plus authority boost (cap 4×) + per-content-type recency decay.
 - `ingest/_index.py` extended with FTS5 chunks_fts virtual table + `backfill_fts()`.
 - Local dir renamed `mcp/` → `dair_mcp/` to avoid namespace collision with the `mcp` PyPI package.
-- `.mcp.json` registers it as `dair-corpus`; subagent frontmatter references `corpus-server` — note: subagent .md files still use the old name and may need updating to match `dair-corpus` in `.mcp.json`. Will surface during the first `/deep-research` smoke test.
+- `.mcp.json` registers it as `dair-corpus`; subagent frontmatter references `corpus-server` — note: subagent .md files still use the old name and may need updating to match `dair-corpus` in `.mcp.json`. Will surface during the first `/deep-ai-research` smoke test.
 
 **Step 5 — eval harness (`evals/run_all.py`):**
-- v1 retrieval-layer eval (not full /deep-research loop yet).
+- v1 retrieval-layer eval (not full /deep-ai-research loop yet).
 - Behavioral assertions: must_mention, must_not_mention, min_hits, recency window, authority_boost presence.
 - Writes per-run `evals/runs/<run-id>/{summary.md,results.json}` and appends to `evals/runs/_history.jsonl`.
 - Latest result: 4 pass, 1 blocked (`authority_karpathy_llm_wiki` — blocked_until step_9 by design). 0 fail, 0 error.
@@ -127,10 +127,10 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 
 1. **Reddit OAuth credentials in `.env`** for r/LocalLLaMA + r/MachineLearning ingestion (Step 7b). Free; just needs you to register a Reddit app.
 2. **The Batch newsletter** — verify the current RSS URL (`/feed/` 404'd) so I can re-enable the adapter.
-3. **End-to-end `/deep-research` smoke test** — I can't invoke it from inside this Claude Code session without recursion. You need to:
+3. **End-to-end `/deep-ai-research` smoke test** — I can't invoke it from inside this Claude Code session without recursion. You need to:
    - Open a fresh shell
    - `cd ~/code/projects/deep-ai-research && claude`
-   - Try `/deep-research What's the latest from DeepSeek?`
+   - Try `/deep-ai-research What's the latest from DeepSeek?`
    - Tell me what happens (success / specific error). If subagents reference `corpus-server` and the actual MCP name is `dair-corpus`, those refs will need updating.
 4. **Authority graph expansion** — current 24 seeds is small. The monthly `source-discovery` job (Step 12) is supposed to surface candidates, but you can hand-add too.
 5. **Podcast list** if you want Step 10 — confirm: Latent Space, Dwarkesh, MLST, No Priors, Cognitive Revolution? Anything else? Whisper transcription is opt-in (`uv sync --extra podcasts`).
@@ -140,4 +140,4 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Step 9: promoted arXiv pipeline (full-text persistence for papers cited by authorities or with >100-star repos)
 - systemd-timer service files for `ingest/run.py` + `poll_authorities.py` (no-op until you `systemctl enable`)
 - Authority engagement enrichment via newsletter mention-detection (without Haiku — regex/keyword-based first pass)
-- `.claude/skills/deep-research/SKILL.md` correction: change `corpus-server` references to `dair-corpus` to match `.mcp.json`
+- `.claude/skills/deep-ai-research/SKILL.md` correction: change `corpus-server` references to `dair-corpus` to match `.mcp.json`

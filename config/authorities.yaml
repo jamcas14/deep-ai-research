@@ -224,5 +224,259 @@ authorities:
     notes: |
       EleutherAI. Open-models eval/research signal.
 
-  # NOTE: this is a seed. Add 30-50 more before going live.
-  # Prioritize people whose retweet of a niche source would change your assessment.
+  # ============ Expansion batch 2 (2026-05-03) ============
+  # Anthropic researchers (alignment, interpretability, training):
+
+  - name: Chris Olah
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: ch402
+      github: colah
+    notes: |
+      Anthropic, mechanistic interpretability. Single most authoritative voice
+      on what's actually going on inside neural nets.
+
+  - name: Sam Bowman
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: sleepinyourhat
+      github: sleepinyourhat
+    notes: |
+      Anthropic, alignment + evals. Co-author of GLUE/SuperGLUE.
+
+  - name: John Schulman
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: johnschulman2
+      github: joschu
+    notes: |
+      Anthropic (ex-OpenAI). PPO, RLHF foundational work.
+
+  - name: Catherine Olsson
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: catherineols
+    notes: |
+      Anthropic, red-team / adversarial robustness. Sparse posting; high signal.
+
+  - name: Jack Clark
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: jackclarksf
+    notes: |
+      Anthropic policy lead. Author of Import AI newsletter (already in
+      sources.yaml). Macro perspective on AI development.
+
+  # OpenAI / ex-OpenAI:
+
+  - name: Greg Brockman
+    weight: 0.8
+    tier: canonical
+    handles:
+      twitter: gdb
+      github: gdb
+    notes: |
+      OpenAI co-founder, President. Visible technical commentary on training
+      stack and product direction.
+
+  - name: Mira Murati
+    weight: 0.8
+    tier: canonical
+    handles:
+      twitter: miramurati
+    notes: |
+      ex-OpenAI CTO; founded Thinking Machines (2024-25 era). Strategic signal
+      on frontier-lab direction.
+
+  - name: Alec Radford
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: AlecRad
+    notes: |
+      OpenAI; first author on GPT, GPT-2, CLIP, Whisper. One of the most
+      consistently right calls in the field. Sparse poster.
+
+  - name: Wojciech Zaremba
+    weight: 0.8
+    tier: canonical
+    handles:
+      twitter: woj_zaremba
+    notes: |
+      OpenAI co-founder, robotics + Codex. Strategic signal on engineering
+      practice.
+
+  # Google / DeepMind:
+
+  - name: Jeff Dean
+    weight: 1.0
+    tier: canonical
+    handles:
+      twitter: JeffDean
+      github: jeffdean
+    notes: |
+      Google chief scientist. Architect of MapReduce, BigTable, TensorFlow,
+      Pathways. Reliable on systems-side AI scaling.
+
+  - name: Quoc Le
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: quocleix
+    notes: |
+      Google DeepMind. Co-author of seq2seq, transformer-scaling work,
+      Bard/Gemini foundation.
+
+  # Open-weight + non-US labs:
+
+  - name: Aidan Gomez
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: aidangomez
+      github: aidangomez
+    notes: |
+      Cohere CEO. Transformer paper co-author. Frontier-model + enterprise
+      angle.
+
+  - name: Arthur Mensch
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: arthurmensch
+    notes: |
+      Mistral CEO (ex-DeepMind). Drove EU open-weight wave; strategic + tech
+      mix.
+
+  - name: Guillaume Lample
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: GuillaumeLample
+      github: glample
+    notes: |
+      Mistral co-founder; first author on LLaMA at Meta. Strong on training
+      details.
+
+  - name: Albert Gu
+    weight: 0.9
+    tier: canonical
+    handles:
+      twitter: _albertgu
+      github: albertfgu
+    notes: |
+      CMU. Mamba / state-space models. The non-transformer architectural
+      camp's most-cited voice.
+
+  # Tooling / open source:
+
+  - name: Thomas Wolf
+    weight: 0.8
+    tier: canonical
+    handles:
+      twitter: Thom_Wolf
+      github: thomwolf
+    notes: |
+      HuggingFace co-founder + chief science officer. Open-source ecosystem
+      gravity.
+
+  - name: Clement Delangue
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: ClementDelangue
+      github: clem
+    notes: |
+      HuggingFace CEO. Aggregator-of-attention for open models.
+
+  - name: Harrison Chase
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: hwchase17
+      github: hwchase17
+    notes: |
+      LangChain CEO. Tool ecosystem signal; criticism + adoption both
+      flow through here.
+
+  - name: Jerry Liu
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: jerryjliu0
+      github: jerryjliu
+    notes: |
+      LlamaIndex CEO. RAG + retrieval ecosystem.
+
+  - name: Erik Bernhardsson
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: bernhardsson
+      github: erikbern
+    notes: |
+      Modal CEO; ex-Spotify (Annoy). Solid systems-engineering perspective.
+
+  - name: Aman Sanger
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: amanrsanger
+    notes: |
+      Cursor co-founder. Practical signal on agentic-IDE realities.
+
+  - name: Lukas Biewald
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: l2k
+      github: lukas
+    notes: |
+      Weights & Biases CEO. ML-experiment tooling perspective.
+
+  # Newsletter / podcast / writers:
+
+  - name: swyx (Shawn Wang)
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: swyx
+      github: sw-yx
+    notes: |
+      Latent Space podcast + AI Engineer Summit. Synthesis-of-AI-engineering
+      community.
+
+  - name: Dwarkesh Patel
+    weight: 0.8
+    tier: trusted
+    handles:
+      twitter: dwarkesh_sp
+    notes: |
+      Dwarkesh Podcast. Long-form interviews with frontier-lab leadership.
+      What he chooses to ask is itself a signal.
+
+  - name: Riley Goodside
+    weight: 0.7
+    tier: trusted
+    handles:
+      twitter: goodside
+    notes: |
+      Scale AI. Foundational prompt-engineering work; sparse but high signal.
+
+  - name: Ethan Mollick
+    weight: 0.6
+    tier: trusted
+    handles:
+      twitter: emollick
+    notes: |
+      Wharton, "One Useful Thing" newsletter. Applied-side AI adoption signal.
+
+  # NOTE: keep growing. Aim for 50-100 entries. The monthly source-discovery
+  # job (ingest.discover) is supposed to surface candidates from inbound
+  # engagements. Hand-add anyone whose niche endorsement would change your
+  # assessment.

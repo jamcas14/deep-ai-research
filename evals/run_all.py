@@ -5,7 +5,7 @@ search() function and checks behavioral assertions. Writes a per-run
 summary to evals/runs/<run-id>/ and appends to evals/runs/_history.jsonl.
 
 This is the v1 eval — it tests the retrieval moat (authority boost +
-recency decay + RRF), not the full /deep-research loop. Full-loop evals
+recency decay + RRF), not the full /deep-ai-research loop. Full-loop evals
 land once the user has actually run the skill end-to-end and we can
 shape behavioral assertions on run traces.
 

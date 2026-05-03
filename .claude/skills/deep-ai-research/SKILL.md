@@ -1,21 +1,21 @@
 ---
-name: deep-research
-description: AI/ML deep-research workflow. Classifies query, dispatches specialist subagents (researcher, contrarian, verifier, critic, synthesizer) sequentially, runs forced recency pass, writes a cited report to reports/. Invoke explicitly with /deep-research <question>.
+name: deep-ai-research
+description: AI/ML deep-research workflow. Classifies query, dispatches specialist subagents (researcher, contrarian, verifier, critic, synthesizer) sequentially, runs forced recency pass, writes a cited report to reports/. Invoke explicitly with /deep-ai-research <question>.
 disable-model-invocation: false
 argument-hint: <question>
 ---
 
-# /deep-research
+# /deep-ai-research
 
 Personal AI/ML deep-research loop. The orchestrator subagent dispatches specialist subagents sequentially against the local markdown corpus + WebSearch, runs structural forced passes (recency + counter-position + verification), and writes a cited report.
 
 ## When to use
 
-User typed `/deep-research <something>` or asked a question that wants a multi-source, cited answer for AI/ML — e.g., model recommendations, "what's the latest with X," "should I use Y vs Z," verification of claims, benchmark lookups.
+User typed `/deep-ai-research <something>` or asked a question that wants a multi-source, cited answer for AI/ML — e.g., model recommendations, "what's the latest with X," "should I use Y vs Z," verification of claims, benchmark lookups.
 
 ## What to do
 
-1. **Take the user's question from `$ARGUMENTS`.** If the user typed `/deep-research <question>`, the question is the rest of the line. If `$ARGUMENTS` is empty, ask the user once for clarification.
+1. **Take the user's question from `$ARGUMENTS`.** If the user typed `/deep-ai-research <question>`, the question is the rest of the line. If `$ARGUMENTS` is empty, ask the user once for clarification.
 
 2. **Generate a `<run-id>`.** Use the format `YYYY-MM-DD-HHMMSS-<slug>` where slug is the first 30 chars of the question slugified. Create `.claude/scratch/<run-id>/` for subagent coordination. Record the question in `manifest.json` at that path.
 

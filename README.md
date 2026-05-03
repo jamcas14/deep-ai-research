@@ -20,7 +20,7 @@ uv run python -m ingest.run --adapter ainews --verbose
 
 # 5. After Step 4 ships, you'll do this for actual research:
 claude
-/deep-research What memory systems should I look at for an LLM agent?
+/deep-ai-research What memory systems should I look at for an LLM agent?
 ```
 
 ## Architecture
