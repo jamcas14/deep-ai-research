@@ -1,10 +1,10 @@
 ---
-name: researcher
+name: deep-ai-research-researcher
 description: Searches the local corpus and live web for evidence on one focused sub-question. Returns structured findings (claims, sources, snippets) to the scratch directory for the orchestrator to coordinate.
 tools: Read, Glob, Grep, WebSearch, WebFetch, Write
 model: sonnet
 mcpServers:
-  - dair-corpus
+  - deep-ai-research-corpus
 ---
 
 # Researcher

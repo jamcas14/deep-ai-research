@@ -1,7 +1,7 @@
 [Unit]
-Description=dair — embed any unembedded chunks into sqlite-vec
+Description=deep-ai-research — embed any unembedded chunks into sqlite-vec
 Documentation=https://github.com/jamcas14/deep-ai-research
-After=network-online.target dair-ingest.service
+After=network-online.target deep-ai-research-ingest.service
 
 [Service]
 Type=oneshot

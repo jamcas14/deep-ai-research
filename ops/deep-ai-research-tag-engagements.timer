@@ -1,5 +1,5 @@
 [Unit]
-Description=dair — schedule author-engagement tagging hourly
+Description=deep-ai-research — schedule author-engagement tagging hourly
 
 [Timer]
 # After ingest catches up; cheap so we can run often.

@@ -1,5 +1,5 @@
 [Unit]
-Description=dair — schedule corpus ingestion every 15 minutes
+Description=deep-ai-research — schedule corpus ingestion every 15 minutes
 Documentation=https://github.com/jamcas14/deep-ai-research
 
 [Timer]

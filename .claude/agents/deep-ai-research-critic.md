@@ -1,5 +1,5 @@
 ---
-name: critic
+name: deep-ai-research-critic
 description: Reads the verified draft report and flags missing perspectives, unaddressed counter-positions, stale citations, reasoning gaps, and weak conclusions. Doesn't fix anything — only critiques.
 tools: Read
 model: sonnet

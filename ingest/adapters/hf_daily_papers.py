@@ -37,7 +37,7 @@ class HFDailyPapersAdapter:
     poll_interval_seconds: int = 14400
     rate_limit_key: str = "huggingface.co"
     backfill_days: int = 7  # walk back N days when no `since` given
-    user_agent: str = "dair/0.1 (deep-ai-research; personal use)"
+    user_agent: str = "deep-ai-research/0.1 (deep-ai-research; personal use)"
     timeout_seconds: float = 20.0
 
     def iter_new(self, since: datetime | None = None) -> Iterable[RawSource]:

@@ -1,5 +1,5 @@
 [Unit]
-Description=dair — schedule arXiv promotion pipeline daily
+Description=deep-ai-research — schedule arXiv promotion pipeline daily
 Documentation=https://github.com/jamcas14/deep-ai-research
 
 [Timer]

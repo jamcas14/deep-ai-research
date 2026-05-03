@@ -9,8 +9,8 @@ newsletter content: if Simon Willison wrote it, that IS authority engagement
 on it. Doesn't need any external API call. Idempotent via the UNIQUE
 constraint on engagements(authority_id, source_id, kind).
 
-Run after ingestion. Wired into the systemd-timer chain via dair-poll-authorities
-or a separate dair-tag-engagements unit (see ops/).
+Run after ingestion. Wired into the systemd-timer chain via deep-ai-research-poll-authorities
+or a separate deep-ai-research-tag-engagements unit (see ops/).
 """
 
 from __future__ import annotations

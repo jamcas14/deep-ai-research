@@ -40,7 +40,7 @@ class HNAdapter:
     source_type: str = "hn_post"
     poll_interval_seconds: int = 14400
     rate_limit_key: str = "hn-algolia"
-    user_agent: str = "dair/0.1 (deep-ai-research; personal use)"
+    user_agent: str = "deep-ai-research/0.1 (deep-ai-research; personal use)"
     timeout_seconds: float = 20.0
     hits_per_page: int = 50
     max_pages: int = 4

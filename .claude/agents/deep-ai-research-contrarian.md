@@ -1,10 +1,10 @@
 ---
-name: contrarian
+name: deep-ai-research-contrarian
 description: Finds the underrated/unconventional answer the lead agent will miss. Fires on recommendation queries (should I use X, what's the best Y, X vs Z). Searches authority-graph-engaged sources and explicit "alternative to X" / "limitations of X" queries. The structural fix for the SEO-bias and Karpathy-wiki failure modes.
 tools: Read, Glob, Grep, WebSearch, WebFetch, Write
 model: sonnet
 mcpServers:
-  - dair-corpus
+  - deep-ai-research-corpus
 ---
 
 # Contrarian

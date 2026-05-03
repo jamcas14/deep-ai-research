@@ -34,7 +34,7 @@ def scrape() -> Iterable[Snapshot]:
     try:
         with httpx.Client(timeout=20.0) as client:
             resp = client.get(ENDPOINT, headers={
-                "User-Agent": "dair/0.1 (deep-ai-research; personal use)"
+                "User-Agent": "deep-ai-research/0.1 (deep-ai-research; personal use)"
             })
             resp.raise_for_status()
             data = resp.json()

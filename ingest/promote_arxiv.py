@@ -48,7 +48,7 @@ log = logging.getLogger("ingest.promote_arxiv")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ARXIV_API = "http://export.arxiv.org/api/query"
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
-USER_AGENT = "dair/0.1 (deep-ai-research; personal use; mailto:noreply@example.com)"
+USER_AGENT = "deep-ai-research/0.1 (deep-ai-research; personal use; mailto:noreply@example.com)"
 
 # Match arXiv IDs that have an explicit "arxiv" context — avoids
 # false-positives on version numbers / phone numbers.

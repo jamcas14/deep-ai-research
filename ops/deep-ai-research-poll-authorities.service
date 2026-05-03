@@ -1,16 +1,17 @@
 [Unit]
-Description=dair — tag author engagements (cheap; no external API calls)
+Description=deep-ai-research — daily authority engagement polling (GitHub stars + events)
 Documentation=https://github.com/jamcas14/deep-ai-research
-After=dair-ingest.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/code/projects/deep-ai-research
-ExecStart=%h/.local/bin/uv run python -m ingest.tag_engagements -v
+ExecStart=%h/.local/bin/uv run python -m ingest.poll_authorities -v
 StandardOutput=journal
 StandardError=journal
-CPUWeight=20
-IOWeight=20
+CPUWeight=30
+IOWeight=30
 Nice=15
 RemainAfterExit=no
 

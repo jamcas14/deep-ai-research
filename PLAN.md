@@ -518,7 +518,7 @@ What doesn't need backup (rebuildable):
 - `corpus/*.md` — re-ingestable from RSS/APIs
 - `corpus/_index.sqlite` — re-derivable from corpus markdown + re-running engagement polling
 
-`make backup` target tarballs the critical files to `~/backup/dair-YYYY-MM-DD.tar.gz`. Cron monthly.
+`make backup` target tarballs the critical files to `~/backup/deep-ai-research-YYYY-MM-DD.tar.gz`. Cron monthly.
 
 ### Concurrency control
 
@@ -542,7 +542,7 @@ The `corpus-server` MCP server opens sqlite in read-only mode by default; write 
 ```ini
 # ops/ingest.timer
 [Unit]
-Description=dair ingestion run
+Description=deep-ai-research ingestion run
 
 [Timer]
 OnBootSec=2min

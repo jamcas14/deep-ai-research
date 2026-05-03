@@ -82,7 +82,7 @@ def github_client(token: str) -> httpx.Client:
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.star+json",  # gives us starred_at
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "dair/0.1 (deep-ai-research; personal use)",
+            "User-Agent": "deep-ai-research/0.1 (deep-ai-research; personal use)",
         },
         timeout=30.0,
         follow_redirects=True,

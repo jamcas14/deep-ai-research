@@ -1,6 +1,6 @@
 """corpus-server — the MCP exposed to Claude Code subagents.
 
-Run via `python -m dair_mcp.server` (configured in .mcp.json).
+Run via `python -m corpus_server.server` (configured in .mcp.json).
 
 Implements the four tools defined in PLAN.md. Hybrid retrieval combines
 FTS5 (keyword) + sqlite-vec (semantic) via RRF k=60, then applies
@@ -55,7 +55,7 @@ _state: dict[str, Any] = {
     },
 }
 
-log = logging.getLogger("dair_mcp.server")
+log = logging.getLogger("corpus_server.server")
 RRF_K = 60
 DEFAULT_TOP_N = 20
 CANDIDATE_K = 100
@@ -502,7 +502,7 @@ def main() -> None:
         log.error("mcp package not installed. Run: uv sync")
         sys.exit(1)
 
-    server = FastMCP("dair-corpus")
+    server = FastMCP("deep-ai-research-corpus")
 
     @server.tool()
     def corpus_search(query: str, top_n: int = DEFAULT_TOP_N,

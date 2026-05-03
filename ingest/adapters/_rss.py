@@ -36,7 +36,7 @@ class RSSAdapter:
     source_type: str
     poll_interval_seconds: int = 3600
     rate_limit_key: str = "default"
-    user_agent: str = "dair/0.1 (deep-ai-research; personal use)"
+    user_agent: str = "deep-ai-research/0.1 (deep-ai-research; personal use)"
     timeout_seconds: float = 20.0
 
     def iter_new(self, since: datetime | None = None) -> Iterable[RawSource]:

@@ -1,4 +1,4 @@
-# deep-ai-research (dair)
+# deep-ai-research
 
 A personal deep-research tool whose subject domain is AI/ML. Fixes the recency and authority/niche-signal failures of existing tools (Claude Research, Perplexity, OpenAI Deep Research). Runs entirely under your $200 Claude Max subscription; everything else is free.
 

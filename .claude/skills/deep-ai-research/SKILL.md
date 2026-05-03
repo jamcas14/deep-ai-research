@@ -19,7 +19,7 @@ User typed `/deep-ai-research <something>` or asked a question that wants a mult
 
 2. **Generate a `<run-id>`.** Use the format `YYYY-MM-DD-HHMMSS-<slug>` where slug is the first 30 chars of the question slugified. Create `.claude/scratch/<run-id>/` for subagent coordination. Record the question in `manifest.json` at that path.
 
-3. **Invoke the `orchestrator` subagent.** Pass it: the question, the `<run-id>`, the path `.claude/scratch/<run-id>/`. The orchestrator runs the full loop and returns a final report path under `reports/`.
+3. **Invoke the `deep-ai-research-orchestrator` subagent** (NOT a generic "orchestrator" — there may be other agents with that name). Pass it: the question, the `<run-id>`, the path `.claude/scratch/<run-id>/`, and the project root path (which is `/home/jamie/code/projects/deep-ai-research`; the orchestrator needs absolute paths because subagents may be invoked from outside the project's cwd). The orchestrator runs the full loop and returns a final report path under `reports/`.
 
 4. **After the orchestrator returns**, print to the terminal:
    - 5–10 bullet summary of the report

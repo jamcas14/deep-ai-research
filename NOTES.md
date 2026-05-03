@@ -85,12 +85,12 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Idempotent via `UNIQUE(authority_id, source_id, kind)`.
 - Twitter, Reddit, HN polling per-authority deferred to v2 (most authorities lack non-github handles in current YAML).
 
-**Step 4 — corpus-server MCP (`dair_mcp/server.py` + `.mcp.json`):**
+**Step 4 — corpus-server MCP (`corpus_server/server.py` + `.mcp.json`):**
 - FastMCP-style server, 7 tools: corpus_search/find_by_authority/recent/fetch_detail + benchmark_current/top/history.
 - Hybrid retrieval: FTS5 BM25 + sqlite-vec cosine, fused via RRF k=60. Plus authority boost (cap 4×) + per-content-type recency decay.
 - `ingest/_index.py` extended with FTS5 chunks_fts virtual table + `backfill_fts()`.
-- Local dir renamed `mcp/` → `dair_mcp/` to avoid namespace collision with the `mcp` PyPI package.
-- `.mcp.json` registers it as `dair-corpus`; subagent frontmatter references `corpus-server` — note: subagent .md files still use the old name and may need updating to match `dair-corpus` in `.mcp.json`. Will surface during the first `/deep-ai-research` smoke test.
+- Local dir renamed `mcp/` → `corpus_server/` to avoid namespace collision with the `mcp` PyPI package.
+- `.mcp.json` registers it as `deep-ai-research-corpus`; subagent frontmatter references `corpus-server` — note: subagent .md files still use the old name and may need updating to match `deep-ai-research-corpus` in `.mcp.json`. Will surface during the first `/deep-ai-research` smoke test.
 
 **Step 5 — eval harness (`evals/run_all.py`):**
 - v1 retrieval-layer eval (not full /deep-ai-research loop yet).
@@ -131,7 +131,7 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
    - Open a fresh shell
    - `cd ~/code/projects/deep-ai-research && claude`
    - Try `/deep-ai-research What's the latest from DeepSeek?`
-   - Tell me what happens (success / specific error). If subagents reference `corpus-server` and the actual MCP name is `dair-corpus`, those refs will need updating.
+   - Tell me what happens (success / specific error). If subagents reference `corpus-server` and the actual MCP name is `deep-ai-research-corpus`, those refs will need updating.
 4. **Authority graph expansion** — current 24 seeds is small. The monthly `source-discovery` job (Step 12) is supposed to surface candidates, but you can hand-add too.
 5. **Podcast list** if you want Step 10 — confirm: Latent Space, Dwarkesh, MLST, No Priors, Cognitive Revolution? Anything else? Whisper transcription is opt-in (`uv sync --extra podcasts`).
 
@@ -140,4 +140,4 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Step 9: promoted arXiv pipeline (full-text persistence for papers cited by authorities or with >100-star repos)
 - systemd-timer service files for `ingest/run.py` + `poll_authorities.py` (no-op until you `systemctl enable`)
 - Authority engagement enrichment via newsletter mention-detection (without Haiku — regex/keyword-based first pass)
-- `.claude/skills/deep-ai-research/SKILL.md` correction: change `corpus-server` references to `dair-corpus` to match `.mcp.json`
+- `.claude/skills/deep-ai-research/SKILL.md` correction: change `corpus-server` references to `deep-ai-research-corpus` to match `.mcp.json`

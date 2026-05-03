@@ -2,7 +2,7 @@
         embed poll-authorities tag-engagements promote-arxiv eval lint test clean backup
 
 help:
-	@echo "dair (deep-ai-research) — common targets"
+	@echo "deep-ai-research — common targets"
 	@echo ""
 	@echo "  Setup:"
 	@echo "    make install            uv sync (core deps)"
@@ -66,7 +66,7 @@ ingest-dry:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy ingest dair_mcp tests
+	uv run mypy ingest corpus_server tests
 
 test:
 	uv run pytest
@@ -76,10 +76,10 @@ clean:
 
 backup:
 	mkdir -p ~/backup
-	tar -czf ~/backup/dair-$$(date +%Y-%m-%d).tar.gz \
+	tar -czf ~/backup/deep-ai-research-$$(date +%Y-%m-%d).tar.gz \
 	    config/ evals/cases.yaml evals/runs/_history.jsonl reports/ \
 	    CLAUDE.md PLAN.md NOTES.md README.md \
 	    .claude/agents/ .claude/skills/ .mcp.json \
-	    ingest/ dair_mcp/ benchmarks/ ops/ tests/ \
+	    ingest/ corpus_server/ benchmarks/ ops/ tests/ \
 	    Makefile pyproject.toml uv.lock .env.example .gitignore
-	@echo "Backup written to ~/backup/dair-$$(date +%Y-%m-%d).tar.gz"
+	@echo "Backup written to ~/backup/deep-ai-research-$$(date +%Y-%m-%d).tar.gz"

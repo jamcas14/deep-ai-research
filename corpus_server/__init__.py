@@ -1,4 +1,4 @@
-"""dair_mcp — corpus-server MCP for the deep-ai-research project.
+"""corpus_server — corpus-server MCP for the deep-ai-research project.
 
 Exposes four tools to Claude Code subagents:
   - search(query, filters)     — hybrid (FTS5 + vector) RRF k=60 with authority

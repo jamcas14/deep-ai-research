@@ -27,7 +27,7 @@ from typing import Any
 
 import yaml
 
-from dair_mcp.server import search
+from corpus_server.server import search
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = PROJECT_ROOT / "evals" / "cases.yaml"

@@ -1,5 +1,5 @@
 [Unit]
-Description=dair — schedule embedding refresh hourly
+Description=deep-ai-research — schedule embedding refresh hourly
 
 [Timer]
 OnBootSec=10min

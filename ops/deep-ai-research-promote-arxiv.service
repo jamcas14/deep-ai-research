@@ -1,7 +1,7 @@
 [Unit]
-Description=dair — daily promoted arXiv pipeline (full-text persistence for cross-mentioned papers)
+Description=deep-ai-research — daily promoted arXiv pipeline (full-text persistence for cross-mentioned papers)
 Documentation=https://github.com/jamcas14/deep-ai-research
-After=network-online.target dair-ingest.service
+After=network-online.target deep-ai-research-ingest.service
 Wants=network-online.target
 
 [Service]
