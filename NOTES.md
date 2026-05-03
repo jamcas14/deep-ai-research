@@ -38,13 +38,34 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Step 2 scaffold: `ingest/_index.py` (sqlite schema with vec0 virtual table for embeddings, engagements, pin_versions, run_costs, adapter_health), `ingest/chunk.py` (versioned chunker — v1 paragraph-aware), `ingest/embed.py` (snowflake-arctic-embed-s interface; lazy import of sentence-transformers from `--extra embed`), `ingest/embed_pending.py` (CLI). sqlite-vec v0.1.9 loaded successfully via pysqlite3-binary 3.51.1.
 - Step 4 scaffold: `.claude/skills/deep-research/SKILL.md` + 6 agent files (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`). System prompts substantive; they call out the structural fixes (forced recency pass, contrarian as first-class, verifier discipline against fabrication).
 
+**Project rename (2026-05-03 evening):**
+- Project renamed twice in same session as user iterated on the name. Final: **`deep-ai-research`** (codename **`dair`**). Previous: `claude-deep-research-ai-domain` → `deep-research-ai-related (drair)` → `deep-ai-research (dair)`. Directory at `/home/jamie/code/projects/deep-ai-research`.
+- `pyproject.toml` `name = "deep-ai-research"`. Description references AI/ML as subject domain.
+- All filenames, headings, user agents, backup tarball names updated.
+- `.venv` rebuilt twice after each directory rename (uv stores absolute paths).
+- Decision rationale: emphasizes AI/ML is the *topic of research*, not the *engine*. The "deep-ai" + "research" word ordering parses naturally as "deep [research about] AI" because "AI research" is an established compound (cf. "cancer research").
+
+**GitHub push (2026-05-03 evening):**
+- `git init` + first commit + `gh repo create deep-ai-research --private --source=. --push`.
+- Repo: **https://github.com/jamcas14/deep-ai-research** (private).
+- Confirmed `.env`, `corpus/`, `.venv/` properly gitignored before commit (no secret leak).
+- `uv.lock` IS tracked (per uv docs — was wrongly gitignored initially; fixed).
+- One transient: `gh repo create --push` raced (repo not yet propagated to GitHub when push fired); retried push after 3s sleep, succeeded.
+
+**Embedding install + run (2026-05-03 evening):**
+- First attempt failed: pyproject had `[dependency-groups] embed`, but `uv sync --extra` requires `[project.optional-dependencies]`. Fixed by moving `embed` and `podcasts` groups; kept `dev` in `[dependency-groups]` since it's dev-only.
+- After fix: `uv sync --extra embed` installed sentence-transformers 5.4.1, torch 2.11.0, transformers 5.7.0, huggingface_hub 1.13.0, onnxruntime 1.25.1. Final venv 4.9GB.
+- `uv run python -m ingest.embed_pending` started in background (task id `b2kw8fo63`). Snowflake-arctic-embed-s downloaded successfully (197 weight shards loaded in <1s). Encoding 685 corpus markdown files now. Estimated 1–6 CPU-hours.
+- Output streamed to `/tmp/claude-1000/-home-jamie-code-projects-claude-deep-research-ai-domain/a19b36ff-88ee-439f-942e-bdad04ce8240/tasks/b2kw8fo63.output` — `tail -f` to watch progress.
+
 **Deferred to next session:**
-- `uv sync --extra embed` and run `make ainews && uv run python -m ingest.embed_pending`. ~3GB PyTorch download, then ~1–6 CPU-hours to embed the existing 685 docs. Don't auto-trigger; user opt-in.
-- **Step 3 is next**: authority polling. `ingest/poll_authorities.py` for GitHub stars/events, Reddit/HN, OpenAlex citations. Backfill engagements for the 24 seed authorities against the existing corpus.
+- **Step 3**: authority polling. `ingest/poll_authorities.py` for GitHub stars/events (using the GitHub PAT now in `.env`), Reddit/HN, OpenAlex citations. Backfill engagements for the 24 seed authorities against existing corpus.
 - **Step 5**: eval framework. `evals/run_all.py` invokes `claude -p "/deep-research <query>"` per case, captures the run trace from `.claude/scratch/<run-id>/`, judges behaviorally.
-- **Try the loop**: with corpus + agents in place, can manually run `claude` then `/deep-research <topic>` to see the loop fire even before embeddings. Researcher will fall back to Glob+Grep on markdown which works fine for small corpus.
+- **Try the loop**: corpus + agents are in place. After embeddings finish, run `claude` and try `/deep-research <topic>` to see the loop fire end-to-end.
+- **Verify embedding completion**: when bg task `b2kw8fo63` finishes, check that `corpus/_index.sqlite` has rows in `embeddings` table for ~all 685 sources. Sample query: `SELECT COUNT(DISTINCT source_id) FROM chunks` and `SELECT COUNT(*) FROM embeddings`.
 
 **To know for fresh session:**
 - The four mechanisms (authority boost, time decay, contrarian subagent, forced recency pass) are the entire moat. Keep them in mind for any retrieval-layer change.
 - Twitter is **deferred indefinitely**. AINews + Reddit + HN are the proxies.
 - The Karpathy-wiki regression eval will not pass until either Twitter ingestion lands OR the authority graph produces a Karpathy retweet via some other channel. Expected.
+- GitHub PAT in `.env` is fine-grained, public-read only — for ingestion polling, NOT for git operations. Git pushes go via `gh` (token at `/home/jamie/.config/gh/hosts.yml`).
