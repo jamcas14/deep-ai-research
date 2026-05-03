@@ -145,12 +145,15 @@ lab_blogs:
     rate_limit_key: thegradient.pub
 
   - name: the_batch
-    enabled: false  # 404 on /feed/ — verify correct URL before re-enabling
+    enabled: true
     publication: "The Batch (DeepLearning.AI)"
-    feed_url: "https://www.deeplearning.ai/the-batch/feed/"
+    # No native RSS; using RSSHub mirror (https://github.com/RSSNext/Folo project
+    # ecosystem). Mirror at rssforever.com — official rsshub.app blocks our IPs.
+    # If mirror dies, alternative: self-host RSSHub via docker.
+    feed_url: "https://rsshub.rssforever.com/deeplearning/the-batch"
     source_type: blog_post
     poll_interval_seconds: 86400
-    rate_limit_key: deeplearning.ai
+    rate_limit_key: rsshub.rssforever.com
 
 # Subreddits. Adapter no-ops gracefully if REDDIT_* creds are missing in .env.
 # To enable: register a Reddit app at https://www.reddit.com/prefs/apps (script
@@ -237,7 +240,14 @@ hn:
     rate_limit_key: hn-algolia
     # HN adapter has its own .py module (custom JSON, not RSS).
 
-hf_daily_papers: [] # Step 9 — HF Daily Papers
+hf_daily_papers:
+  - name: hf_daily_papers
+    enabled: true
+    publication: "HuggingFace Daily Papers"
+    source_type: hf_daily_papers
+    poll_interval_seconds: 14400
+    rate_limit_key: huggingface.co
+    # Custom JSON adapter; HF_TOKEN in .env bumps rate limits.
 podcasts: []       # Step 10
 benchmarks: []     # Step 8
 
@@ -254,3 +264,11 @@ rate_limits:
     requests_per_minute: 30
   lastweekin.ai:
     requests_per_minute: 30
+  rsshub.rssforever.com:
+    requests_per_minute: 20      # Be polite to the mirror; not infinite.
+  huggingface.co:
+    requests_per_minute: 60
+  hn-algolia:
+    requests_per_minute: 100
+  reddit:
+    requests_per_minute: 60      # PRAW handles this internally; doc here.

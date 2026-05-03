@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,21 @@ def acquire_lock(path: Path) -> int | None:
         fd.close()
         return None
     return fd  # type: ignore[return-value]
+
+
+def load_dotenv_into_environ(path: Path) -> None:
+    """Minimal .env loader so adapter creds (HF_TOKEN, REDDIT_*) are picked up."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def load_adapter(name: str, *, spec: dict | None = None) -> Adapter:
@@ -182,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose >= 2 else logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    load_dotenv_into_environ(PROJECT_ROOT / ".env")
 
     paths = load_paths()
     corpus_dir = (PROJECT_ROOT / paths["corpus_dir"]).resolve()
