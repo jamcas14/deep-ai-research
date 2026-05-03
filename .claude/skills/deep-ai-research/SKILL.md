@@ -1,6 +1,6 @@
 ---
 name: deep-ai-research
-description: AI/ML deep-research workflow. Classifies query, dispatches specialist subagents (researcher, contrarian, verifier, critic, synthesizer) sequentially, runs forced recency pass, writes a cited report to reports/. Invoke explicitly with /deep-ai-research <question>.
+description: AI/ML deep-research workflow. Runs a clarification gate, classifies query, dispatches specialist subagents (researcher, contrarian, citation-verifier, fit-verifier, critic, synthesizer) sequentially, runs forced recency pass, writes a cited report (Conclusion → Confidence panel → Findings → Alternatives → Open questions) to reports/. Invoke explicitly with /deep-ai-research <question>.
 disable-model-invocation: false
 argument-hint: <question>
 ---
@@ -22,10 +22,10 @@ User typed `/deep-ai-research <something>` or asked a question that wants a mult
 3. **Invoke the `deep-ai-research-orchestrator` subagent** (NOT a generic "orchestrator" — there may be other agents with that name). Pass it: the question, the `<run-id>`, the path `.claude/scratch/<run-id>/`, and the project root path (which is `/home/jamie/code/projects/deep-ai-research`; the orchestrator needs absolute paths because subagents may be invoked from outside the project's cwd). The orchestrator runs the full loop and returns a final report path under `reports/`.
 
 4. **After the orchestrator returns**, print to the terminal:
-   - 5–10 bullet summary of the report
-   - the path to the saved full report
-   - any flags from the verifier (rejected citations) or critic (missing perspectives)
-   - a one-line cost summary (token tally if available)
+   - The report's §1 Conclusion paragraph and §2 Confidence panel verbatim — these are designed as the terminal-printed summary.
+   - The path to the saved full report (which also contains §3 Findings, §4 Alternatives considered and rejected, §5 Open questions, §6 Citations).
+   - Any flags from the citation verifier (rejected/inconclusive citations), the fit verifier (re-dispatches, residual uncertain flags), or the critic (missing perspectives, coverage gaps from the retrieval log).
+   - A one-line cost summary (token tally if available).
 
 ## Inputs
 

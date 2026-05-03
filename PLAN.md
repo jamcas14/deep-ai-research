@@ -33,19 +33,30 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 ├── PLAN.md                            # this file
 ├── NOTES.md                           # current-month log; older content rotates to notes/archive/
 ├── .claude/
+│   ├── honesty_contract.md            # system-wide rules read by every subagent
 │   ├── skills/
-│   │   └── deep-research/
+│   │   └── deep-ai-research/
 │   │       └── SKILL.md               # /deep-ai-research <question> entry point
-│   ├── agents/
-│   │   ├── orchestrator.md
-│   │   ├── researcher.md
-│   │   ├── contrarian.md              # finds underrated answers
-│   │   ├── verifier.md                # re-checks every citation
-│   │   ├── critic.md                  # flags missing perspectives
-│   │   └── synthesizer.md             # writes final cited report
+│   ├── agents/                        # all files prefixed deep-ai-research-*.md
+│   │   ├── deep-ai-research-orchestrator.md
+│   │   ├── deep-ai-research-researcher.md
+│   │   ├── deep-ai-research-contrarian.md   # finds underrated answers (independent retrieval)
+│   │   ├── deep-ai-research-verifier.md     # citation verifier — re-checks every citation
+│   │   ├── deep-ai-research-fit-verifier.md # NEW — checks recommendation/query fit
+│   │   ├── deep-ai-research-critic.md       # flags missing perspectives + retrieval-log coverage gaps
+│   │   └── deep-ai-research-synthesizer.md  # writes final cited report
 │   └── scratch/                       # per-run subagent coordination; ephemeral
 │       └── <run-id>/
-│           └── <role>.{md,json}
+│           ├── manifest.json          # query, classification, clarifications, redispatches
+│           ├── researcher-<N>-gen<G>.{md,json}  # generation-tagged for re-dispatch isolation
+│           ├── contrarian-gen<G>.{md,json}
+│           ├── recency_pass.json
+│           ├── synthesizer-draft.md
+│           ├── verifier.json          # citation verifier output
+│           ├── fit_verifier.json      # fit verifier output
+│           ├── critic.md
+│           ├── synthesizer-final.md   # also copied to reports/<run-id>.md
+│           └── retrieval_log.jsonl    # one JSON line per retrieval call across all agents
 ├── corpus/                            # gitignore'd — 25–50K markdown files at maturity
 │   ├── newsletters/
 │   ├── lab-blogs/
@@ -116,21 +127,25 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 
 ### Foreground (a research session)
 
-1. `cd ~/code/projects/claude-deep-research-ai-domain && claude`
+1. `cd ~/code/projects/deep-ai-research && claude`
 2. `/deep-ai-research <question>`
 3. Skill loads orchestrator subagent.
-4. Orchestrator classifies query (recency / verification / exploration / recommendation / benchmark).
-5. Orchestrator generates a `<run-id>`, creates `.claude/scratch/<run-id>/`, plans 3–5 sub-questions.
-6. **Sequential** subagent dispatch:
-   - **Researcher** runs first (or 3–5 sequential researcher invocations, one per sub-question). Each searches corpus (`Glob`+`Grep` on markdown frontmatter, plus `corpus-server` MCP for `find_by_authority` queries) and `WebSearch` for gaps. Writes findings to `.claude/scratch/<run-id>/researcher-<N>.{md,json}`.
-   - **Contrarian** runs after researchers. Orchestrator passes "the obvious answer" identified by researchers; contrarian searches for underrated alternatives and writes to `contrarian.{md,json}`.
-   - **Forced recency pass** — orchestrator calls `corpus-server.recent(topic, hours=168)` directly (no subagent).
-   - **Synthesizer** writes the report draft to `synthesizer.md`.
-   - **Verifier** reads the report's citations and re-fetches each source to confirm the claim is actually in it; writes `verifier.json` with pass/fail per citation.
-   - **Critic** reads the verified report, flags missing perspectives, stale data, unaddressed counter-positions; writes `critic.md`.
-   - **Synthesizer** runs again, integrating verifier and critic feedback. Writes final report to `reports/YYYY-MM-DD-slug.md`.
-7. Orchestrator prints 5–10 bullet summary + report path to terminal.
-8. Total wall-clock: 2–5 minutes for typical queries. Sequential overhead is the cost; revisit Agent Teams if pain.
+4. **Clarification gate.** Before classification, orchestrator evaluates whether the query is fit-for-research-as-stated. If hardware/budget/platform/term-ambiguity/constraints would change the recommendation, it asks 2–4 sharp clarifying questions via `AskUserQuestion`. Q&A is recorded in `manifest.json` and threaded to every subagent. Skipped for self-directed exploration ("survey the landscape of X") and simple factual queries ("what is X").
+5. Orchestrator classifies query (recency / verification / exploration / recommendation / benchmark).
+6. Orchestrator generates a `<run-id>`, creates `.claude/scratch/<run-id>/`, plans 3–5 sub-questions.
+7. **Sequential** subagent dispatch:
+   - **Researcher** runs first (or 3–5 sequential researcher invocations, one per sub-question). Each searches corpus (`Glob`+`Grep` on markdown frontmatter, plus `corpus-server` MCP for `find_by_authority` queries) and `WebSearch` for gaps. Writes findings to `.claude/scratch/<run-id>/researcher-<N>-gen<G>.{md,json}` and pre-tags claims (`tag_hint: verified|inferred|judgment`).
+   - **Contrarian** runs after researchers (recommendation queries only). Orchestrator passes only a one-line label of "the obvious answer" plus the clarifications — *not* the full researcher findings, to enforce independence. Two passes: micro (always — niche-but-correct alternatives including finetune lineages) and macro (when stakes warrant — questions whether the framing itself is right). Writes to `contrarian-gen<G>.{md,json}`.
+   - **Forced recency pass** — orchestrator runs Glob+Grep on `./corpus/` directly (no subagent), filtered by frontmatter `date` within last 7 days.
+   - **Synthesizer (draft)** writes `synthesizer-draft.md` using the required structure: §1 Conclusion · §2 Confidence panel (Strongest evidence / Weakest assumption / What would change my mind) · §3 Findings (`[verified]/[inferred]/[judgment: <rationale>]` tagged) · §4 Alternatives considered and rejected (with within-frame and reframe subsections) · §5 Open questions · §6 Citations.
+   - **Citation verifier** reads the report's citations and re-fetches each source to confirm the claim is actually in it; writes `verifier.json` with pass/fail per citation.
+   - **Fit verifier** reads the draft, manifest (with clarifications), and contrarian findings; checks goal/constraint/category/implicit-constraint fit. On `fail`, returns `right_category_hint` + `rerun_guidance` and the orchestrator re-dispatches researcher and/or contrarian at gen2 (cap: 1 re-dispatch per run). Two consecutive fit failures → `finish_reason: "fit_failure_after_redispatch"` and an honest "couldn't produce a fit recommendation" report.
+   - **Critic** reads the verified draft + both verifier outputs + retrieval log + manifest; flags missing perspectives, stale data, **coverage gaps from `retrieval_log.jsonl`** (e.g. "no subagent searched the finetune-lineage angle"), tag-discipline issues. Writes `critic.md`.
+   - **Synthesizer (final)** runs again, integrating critic + both verifier outputs. Writes final report to `reports/<run-id>.md`.
+8. Orchestrator prints §1 Conclusion + §2 Confidence panel verbatim to terminal, plus path to full report and any flags.
+9. Total wall-clock: 2–5 minutes for typical queries (longer if a re-dispatch fires). Sequential overhead is the cost; revisit Agent Teams if pain.
+
+Every subagent reads `.claude/honesty_contract.md` first. The contract enforces no-sycophancy, no-vibes, capitulation guard (recursive across messages), confidence-tag discipline (`[judgment]` requires a one-line rationale), permission to disagree with the user, "I don't know" branch, and three-pass loop cap with escalate-to-user as the preferred third option.
 
 ### Background (continuous, you don't see it)
 
@@ -182,43 +197,49 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 
 ## Subagent topology
 
-Six specialist subagents. Each has narrow `tools`, narrow `mcpServers`, narrow system prompt.
+Seven specialist subagents (orchestrator + 6 specialists). Each has narrow `tools`, narrow `mcpServers`, narrow system prompt. **Every subagent reads `.claude/honesty_contract.md` first.**
 
-### `orchestrator` (the one that runs your query)
+### `deep-ai-research-orchestrator` (the one that runs your query)
 - **model**: `sonnet`
-- **tools**: `Agent(researcher, contrarian, verifier, critic, synthesizer)`, `Read`, `Write`, `Bash` (for sqlite queries via CLI), `Glob`, `Grep`
-- **mcpServers**: `corpus-server`
-- **system prompt**: classifies query; plans sub-questions; manages scratch dir; dispatches subagents in correct order; runs forced recency pass; assembles final report path; enforces token budget.
+- **tools**: `Agent`, `AskUserQuestion`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `WebSearch`
+- **mcpServers**: `deep-ai-research-corpus`
+- **system prompt**: runs the **clarification gate** (asks 2–4 sharp questions when hardware/budget/term-ambiguity/constraints would change the answer); classifies query; plans sub-questions; manages scratch dir + manifest; dispatches subagents in correct order with generation tagging; runs forced recency pass; **on fit-verifier `fail` → re-dispatches researcher/contrarian at gen2 (cap: 1)**; assembles final report path; enforces token budget.
 
-### `researcher` (the worker)
+### `deep-ai-research-researcher` (the worker)
 - **model**: `sonnet`
-- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`
-- **mcpServers**: `corpus-server`
-- **system prompt**: receives one sub-question + context; searches corpus first via `corpus-server.search` (which does RRF + authority + decay), then `WebSearch` if corpus is insufficient; writes findings as structured JSON+markdown to assigned scratch path.
+- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`, `Write`
+- **mcpServers**: `deep-ai-research-corpus`
+- **system prompt**: receives one sub-question + scratch dir + clarifications + generation number; searches corpus first via `corpus-server.search` (RRF + authority + decay), then `WebSearch` if corpus is insufficient; **logs every retrieval call to `retrieval_log.jsonl`**; writes findings as JSON+markdown including per-claim `tag_hint` (verified|inferred|judgment) and `tag_rationale` for `judgment` tags.
 
-### `contrarian` (the structural fix for the Karpathy-wiki failure)
+### `deep-ai-research-contrarian` (the structural fix for the Karpathy-wiki failure)
 - **model**: `sonnet`
-- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`
-- **mcpServers**: `corpus-server`
-- **system prompt**: receives "the obvious answer" identified by researchers; explicit job: *find the answer they'd miss*. Searches `corpus-server.search` with `min_authority_boost > 0` filter. Searches WebSearch for "alternative to X", "limitations of X", "X criticism", "what's better than X". Writes 2–3 underrated candidates with sources.
+- **tools**: `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`, `Write`
+- **mcpServers**: `deep-ai-research-corpus`
+- **system prompt**: **independent retrieval** — receives only a one-line label of "the obvious answer" plus clarifications, NOT the full researcher findings. **Two passes**: (1) micro-contrarian always runs — finds niche-but-correct alternatives including finetune lineages; (2) macro-contrarian runs when the lead's recommendation has high cost/complexity/commitment — questions the framing. Authority + 90-day recency biased. Logs all retrieval to `retrieval_log.jsonl`.
 
-### `verifier` (the structural fix for citation fabrication)
+### `deep-ai-research-verifier` (the structural fix for citation fabrication; aka *citation verifier*)
 - **model**: `sonnet`
 - **tools**: `Read`, `WebFetch`
-- **mcpServers**: `corpus-server` (for `fetch_detail`)
-- **system prompt**: reads the synthesizer's report; for each cited claim, re-fetches the cited source; confirms the claim is in it. Writes `verifier.json` with `{cite_id, status: pass|fail|inconclusive, evidence_excerpt}` per citation.
+- **mcpServers**: `deep-ai-research-corpus` (for `fetch_detail`)
+- **system prompt**: reads the synthesizer's draft; for each cited claim, re-fetches the cited source; confirms the claim is in it. Writes `verifier.json` with `{claim, citation, status: pass|fail|inconclusive, evidence_excerpt}` per citation. Does **not** judge whether the right *kind of thing* is recommended — that's the fit verifier's job.
 
-### `critic` (the structural fix for missing perspectives)
+### `deep-ai-research-fit-verifier` (the structural fix for "right citations, wrong recommendation")
+- **model**: `sonnet`
+- **tools**: `Read`, `Write`, `Glob`, `Grep`
+- **mcpServers**: `deep-ai-research-corpus`
+- **system prompt**: reads the draft + manifest (with clarifications) + citation verifier + contrarian outputs. Checks four dimensions: **goal fit**, **constraint fit**, **category fit**, **implicit-constraint fit**. On `fail`, returns `right_category_hint` + `rerun_guidance` to the orchestrator (which re-dispatches at gen2). Does not fix the report itself.
+
+### `deep-ai-research-critic` (the structural fix for missing perspectives + retrieval coverage gaps)
 - **model**: `sonnet`
 - **tools**: `Read`
 - **mcpServers**: none (works only from scratch dir)
-- **system prompt**: reads the verified report; flags unsupported claims, missing counter-positions, stale citations (cited source >6mo old for fast-moving topic), reasoning gaps. Writes `critic.md`.
+- **system prompt**: reads draft + verifier.json + fit_verifier.json + retrieval_log.jsonl + manifest.json; flags unsupported claims, missing counter-positions, stale citations, reasoning gaps, **coverage gaps from the retrieval log** (e.g. "no subagent searched the finetune-lineage angle"), tag-discipline issues (bare `[judgment]` without rationale, `[verified]` on a verifier-failed claim). Writes `critic.md` with three buckets: `claim issues`, `coverage gaps`, `tag-discipline issues`.
 
-### `synthesizer` (the writer)
+### `deep-ai-research-synthesizer` (the writer)
 - **model**: `sonnet` for normal; `opus` if orchestrator classifies high-complexity
-- **tools**: `Read`, `Write`, `WebSearch` (for the recency-double-check)
-- **mcpServers**: `corpus-server` (for `recent` to check freshness)
-- **system prompt**: assembles the final cited report from researcher+contrarian findings. **Recency double-check rule**: if any cited source is older than 6 months for a fast-moving topic, runs `corpus-server.recent` to verify nothing newer supersedes; if it does, surface both. Iterates after critic feedback.
+- **tools**: `Read`, `Write`, `WebSearch` (for the recency-double-check), `Glob`, `Grep`
+- **mcpServers**: `deep-ai-research-corpus` (for `recent` to check freshness)
+- **system prompt**: reads only **latest-generation** researcher and contrarian outputs (`*-gen<G>.json` where `<G>` is highest present). Assembles the final report using the **fixed structure**: §1 Conclusion · §2 Confidence panel (Strongest evidence / Weakest assumption / What would change my mind) · §3 Findings (mandatory `[verified]/[inferred]/[judgment: <rationale>]` tags inline) · §4 Alternatives considered and rejected (within-frame + reframe subsections) · §5 Open questions · §6 Citations. **Recency double-check rule**: cited sources older than 6 months on fast-moving topics trigger a `WebSearch` to verify nothing newer supersedes. Two-pass: draft → (citation verifier + fit verifier + critic run between) → final. Tag-finalization on second pass downgrades `[verified]` to `[inferred]` if citation verifier marked `inconclusive`, drops the claim if `fail`.
 
 ---
 
@@ -474,21 +495,25 @@ Judge produces a structured score: pass/fail per behavioral criterion + a freefo
 
 ```
 evals/runs/<run-id>/
-├── manifest.json              # query, classifier output, started/finished, finish_reason
+├── manifest.json              # query, classification, clarifications, sub_questions, redispatches, finished_at, finish_reason
 ├── orchestrator.log           # what orchestrator decided when
-├── researcher-1.{md,json}     # findings + raw search results
-├── researcher-2.{md,json}
-├── researcher-3.{md,json}
-├── contrarian.{md,json}       # underrated answers found
-├── recency_pass.json          # the forced recency sweep result
-├── synthesizer-draft.md       # first draft
-├── verifier.json              # per-citation pass/fail
-├── critic.md                  # critique
-├── synthesizer-final.md       # final report (also copied to reports/)
-└── tokens.json                # input/output token tally per role
+├── researcher-1-gen1.{md,json}   # findings + raw search results; -gen<G> tags re-dispatch generation
+├── researcher-2-gen1.{md,json}
+├── researcher-3-gen1.{md,json}
+├── researcher-1-gen2.{md,json}   # only present if fit-verifier triggered a re-dispatch
+├── contrarian-gen1.{md,json}     # underrated answers; micro + (when warranted) macro pass
+├── contrarian-gen2.{md,json}     # only present if re-dispatch repointed the contrarian
+├── recency_pass.json             # the forced recency sweep result
+├── retrieval_log.jsonl           # one JSON line per retrieval call across all agents — used by critic for coverage gaps
+├── synthesizer-draft.md          # first draft (uses latest-generation researcher/contrarian outputs only)
+├── verifier.json                 # citation verifier — per-citation pass/fail/inconclusive
+├── fit_verifier.json             # fit verifier — per-dimension pass/fail and re-dispatch hints
+├── critic.md                     # critique with three buckets: claim issues, coverage gaps, tag-discipline
+├── synthesizer-final.md          # final report (also copied to reports/)
+└── tokens.json                   # input/output token tally per role
 ```
 
-Eval framework reads `manifest.json` + `tokens.json` for behavioral assertions ("did recency pass fire?", "are there at least 3 distinct citations?", "did verifier reject anything?").
+Eval framework reads `manifest.json` + `tokens.json` + `retrieval_log.jsonl` for behavioral assertions ("did recency pass fire?", "did the orchestrator call AskUserQuestion?", "did the contrarian's queries actually differ from the lead's?", "did the fit verifier trigger a re-dispatch?", "are there at least 3 distinct citations?", "did verifier reject anything?"). The current `evals/run_all.py` is retrieval-layer-only; full-loop trace assertions are tracked under `blocked_until: full_loop_eval_harness` in `cases.yaml`.
 
 ### Cadence
 
@@ -708,11 +733,13 @@ Update or remove the existing `docs/*` (Postgres-era; mostly wrong). Trim CLAUDE
 - **done when**: `python -m evals run_all` produces `evals/runs/<week>-summary.md` with per-case pass/fail/blocked
 
 ### Step 6 — Specialist subagents + forced passes
-- `.claude/agents/{contrarian,verifier,critic,synthesizer}.md`
-- Orchestrator dispatches in correct sequence: researchers → contrarian → recency-pass → synthesizer-draft → verifier → critic → synthesizer-final
+- `.claude/agents/deep-ai-research-{orchestrator,researcher,contrarian,verifier,fit-verifier,critic,synthesizer}.md` + `.claude/honesty_contract.md`
+- Orchestrator dispatches in correct sequence: clarification gate → classification → researchers → contrarian (independent) → recency-pass → synthesizer-draft → citation-verifier → fit-verifier (re-dispatch on fail, capped at 1) → critic (with retrieval-log coverage check) → synthesizer-final
 - Forced recency pass wired
 - Counter-position pass on recommendation queries
-- **done when**: re-run evals — recency case improves; contrarian case shows underrated alternatives; verifier catches a deliberately-fabricated citation in a synthetic test
+- Honesty contract referenced by every subagent
+- Retrieval log written to scratch by all retrieval-tool callers
+- **done when**: re-run evals — recency case improves; contrarian case shows underrated alternatives; verifier catches a deliberately-fabricated citation in a synthetic test; fit-verifier catches an injected category mismatch and triggers re-dispatch
 
 ### Step 7 — Lab blog + Reddit + HN + HF Daily Papers ingestion
 - Adapters for ~30 lab blogs
@@ -825,7 +852,7 @@ Without this, the moat decays. The system silently turns into a slower version o
 
 ## Final summary
 
-**What we're building**: a personal AI/ML research assistant that runs entirely inside Claude Code (CLI), with a markdown corpus continuously fed by free-tier APIs, indexed by a small sqlite sidecar, and queried through a 6-subagent loop that explicitly fights SEO bias via a contrarian agent and forced recency pass.
+**What we're building**: a personal AI/ML research assistant that runs entirely inside Claude Code (CLI), with a markdown corpus continuously fed by free-tier APIs, indexed by a small sqlite sidecar, and queried through a 7-subagent loop (orchestrator + researcher + contrarian + citation-verifier + fit-verifier + critic + synthesizer) governed by a shared honesty contract. The loop explicitly fights SEO bias (contrarian + recency pass), citation fabrication (citation verifier), recommendation/query mismatch (fit verifier with bounded re-dispatch), missing perspectives (critic with retrieval-log coverage check), and sycophancy (clarification gate + capitulation guard).
 
 **What makes it different from Claude Research**: a curated authority graph that boosts content from people the user personally trusts, structural mechanisms in the loop that fight the "obvious answer" trap, and a continuously-fed local corpus that already contains what was published yesterday.
 

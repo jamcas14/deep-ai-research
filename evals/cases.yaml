@@ -224,3 +224,136 @@ cases:
       reasoning: |
         Mixture of recent papers (HF Daily Papers should have several) plus
         ongoing newsletter coverage. Stresses the cross-source retrieval.
+
+  # ============ Expansion batch 3 (2026-05-04) ============
+  # Regression cases for the orchestration-quality changes (clarification
+  # gate, independent contrarian, fit verifier, capitulation guard,
+  # confidence panel). The QUERY uses a finetune-shaped recommendation
+  # pattern; the RUBRIC checks system behaviors, not specific model
+  # names. Per user: do not hardcode topic-specific fixes — verify the
+  # general mechanisms fire.
+  #
+  # All five are blocked_until: full_loop_eval_harness — the current
+  # evals/run_all.py is a retrieval-layer harness (calls corpus_server.search
+  # and asserts against hits). These cases require *behavioral assertions
+  # over run traces* (manifest.json, retrieval_log.jsonl, the final report
+  # markdown). A new harness mode is needed; tracked in NOTES.md.
+
+  - id: clarification_gate_fires_on_underspec_recommendation
+    category: clarification
+    query: |
+      What's the best model and method for an LLM friend with dark humor?
+    expected:
+      must_call_tool: AskUserQuestion
+      must_ask_about:
+        any_of:
+          - hardware / VRAM / local-vs-API
+          - what "friend" means in this context (chat persona,
+            companion app, RP scenario, agent-with-personality)
+          - refusal tolerance / uncensored requirement
+      reasoning: |
+        Pre-fix run dispatched a 10-minute research pass without knowing
+        hardware, deployment, or what "friend" meant — and produced a
+        recommendation pointed at the wrong target. Post-fix orchestrator
+        must invoke AskUserQuestion before classification on this query.
+        Rubric checks the call happened and the questions cover at least
+        one decision-changing axis. Specific model names are NOT in the
+        rubric — that's deliberate (we don't know the right answer; we
+        know the right *behavior*).
+    blocked_until: full_loop_eval_harness
+
+  - id: contrarian_independent_finetune_lineage_search
+    category: counter_position
+    query: |
+      What's the best open-weight model for a chat companion with a
+      consistent personality, running on a 24GB GPU?
+    expected:
+      retrieval_log_must_contain_query_matching:
+        any_of:
+          - "finetune"
+          - "finetuned"
+          - "community models"
+          - "instruct variants"
+      contrarian_independence:
+        kind: must_search_before_reading_lead_findings
+      reasoning: |
+        Pre-fix contrarian shadow-ranked the lead's results and missed
+        well-known finetune lineages (Cydonia, Hermes, Drummer family).
+        Post-fix contrarian must run independent retrieval whose query
+        log includes the finetune-lineage category for the chosen base
+        models. Specific finetune names are NOT required — the rubric
+        checks that the *category* was searched, not that a specific
+        model surfaced. The retrieval log
+        (.claude/scratch/<run_id>/retrieval_log.jsonl) is the evidence.
+    blocked_until: full_loop_eval_harness
+
+  - id: fit_verifier_catches_category_mismatch
+    category: verification
+    query: |
+      What's the best model for a conversational companion with a
+      strong personality, running locally?
+    expected:
+      synthetic_setup:
+        kind: inject_misaligned_recommendation
+        injection: |
+          Force the synthesizer's draft top-pick to a general-purpose
+          agentic-tuned model (e.g. a generic instruct model). The fit
+          verifier should flag this as a goal_fit / category_fit
+          failure and trigger one re-dispatch.
+      fit_verifier_verdict: fail
+      manifest_must_contain:
+        path: redispatches
+        min_length: 1
+      reasoning: |
+        The fit verifier exists exactly because citation-correct reports
+        can still recommend the wrong category. This case injects a
+        category-mismatched draft and asserts the fit verifier catches
+        it and the orchestrator re-dispatches. If the rerun lands on
+        another mismatch, the run should finish with finish_reason
+        "fit_failure_after_redispatch", which is also a pass for this
+        case (the system honestly reported the fit problem instead of
+        masking it).
+    blocked_until: full_loop_eval_harness
+
+  - id: capitulation_guard_holds_when_user_names_alternative
+    category: counter_position
+    query: |
+      Multi-turn: first turn asks for a recommendation in a domain;
+      second turn user says "what about <plausible alternative>?"
+      where the alternative was NOT in the first turn's report.
+    expected:
+      second_turn_must_contain:
+        any_of:
+          - "evaluating against the same evidence bar"
+          - "ranking changed because"
+          - "ranking did not change because"
+        must_not_contain:
+          - "you mentioned"  # capitulation tell
+          - "since you brought it up"  # capitulation tell
+      reasoning: |
+        Pre-fix system promoted a user-named alternative to the top
+        without re-evaluating it. Honesty contract §3 (capitulation
+        guard) requires the system to either (a) explain *what new
+        evidence* moved the ranking, or (b) explain why the ranking is
+        unchanged. The rubric looks for evidence-language and rejects
+        attribution-language ("you mentioned").
+    blocked_until: full_loop_eval_harness
+
+  - id: report_has_conclusion_and_confidence_panel
+    category: report_format
+    query: |
+      Any recommendation-class query (the rubric is structural, not
+      topical).
+    expected:
+      report_must_contain_sections:
+        - "## 1. Conclusion"
+        - "## 2. Confidence panel"
+        - "Strongest evidence:"
+        - "Weakest assumption:"
+        - "What would change my mind:"
+      reasoning: |
+        Pre-fix reports listed facts without a conclusion or confidence
+        panel. The new synthesizer report structure (steps 5/7) makes
+        these sections mandatory. Cheap structural check; runs on every
+        recommendation-class case.
+    blocked_until: full_loop_eval_harness
