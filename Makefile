@@ -1,5 +1,6 @@
-.PHONY: help install install-embed install-timers verify-sqlite ingest ingest-dry ainews \
-        embed poll-authorities tag-engagements promote-arxiv eval lint test clean backup
+.PHONY: help install install-embed install-skill install-timers register-user-mcp \
+        verify-sqlite ingest ingest-dry ainews embed poll-authorities tag-engagements \
+        promote-arxiv eval lint test clean backup
 
 help:
 	@echo "deep-ai-research — common targets"
@@ -7,6 +8,8 @@ help:
 	@echo "  Setup:"
 	@echo "    make install            uv sync (core deps)"
 	@echo "    make install-embed      uv sync --extra embed (adds PyTorch ~3GB)"
+	@echo "    make install-skill      symlink skill+agents to ~/.claude/ (global /deep-ai-research)"
+	@echo "    make register-user-mcp  register corpus MCP at user scope (works from any cwd)"
 	@echo "    make install-timers     install systemd-user timers (background ingestion)"
 	@echo "    make verify-sqlite      sanity-check sqlite-vec ABI compat"
 	@echo ""
@@ -32,6 +35,12 @@ install:
 
 install-embed:
 	uv sync --extra embed
+
+install-skill:
+	bash ops/install-skill.sh
+
+register-user-mcp:
+	bash ops/register-user-mcp.sh
 
 install-timers:
 	bash ops/install-systemd-timers.sh
