@@ -564,6 +564,36 @@ def main() -> None:
         """
         return fetch_detail(source_id)
 
+    # ---- benchmarks tools ----
+    @server.tool()
+    def benchmark_current(benchmark: str, model: str) -> dict[str, Any] | None:
+        """Most recent snapshot for (benchmark, model).
+
+        Args:
+            benchmark: e.g., 'openrouter', 'lmarena'.
+            model: model identifier (case-insensitive).
+        """
+        from benchmarks import current as _current
+        snap = _current(benchmark, model)
+        return snap.to_dict() if snap else None
+
+    @server.tool()
+    def benchmark_top(benchmark: str, n: int = 10) -> list[dict[str, Any]]:
+        """Top-N models by score on a benchmark.
+
+        Args:
+            benchmark: e.g., 'openrouter'.
+            n: max results.
+        """
+        from benchmarks import top as _top
+        return [s.to_dict() for s in _top(benchmark, n=n)]
+
+    @server.tool()
+    def benchmark_history(benchmark: str, model: str) -> list[dict[str, Any]]:
+        """Score history for (benchmark, model), oldest → newest."""
+        from benchmarks import history as _history
+        return [s.to_dict() for s in _history(benchmark, model)]
+
     server.run()
 
 

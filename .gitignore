@@ -21,6 +21,9 @@ venv/
 # The corpus is rebuildable from sources, so we don't track it in git.
 corpus/
 
+# But DO track the directory shape so cloned repos get the structure.
+!corpus/.gitkeep
+
 # Per-research-run scratch dirs — ephemeral
 .claude/scratch/
 
