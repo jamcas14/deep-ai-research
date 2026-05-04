@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# capture-usage.sh — Stop-hook handler for Patch CC.
+# capture-usage.sh — usage-telemetry hook handler.
+#
+# Patch CC (2026-05-04): originally a Stop-hook handler.
+# Patch JJ (2026-05-04): also fires on PostToolUse(Agent|Task) and SubagentStop
+# so the snapshot updates mid-run. Without Patch JJ, Stop only fires at the end
+# of the main turn — so usage_snapshot_end.json would mirror usage_snapshot_start.json
+# whenever the deep-ai-research skill ran inside a single turn.
 #
 # Claude Code pipes a JSON payload to hooks (and to the statusLine command).
 # That payload includes `rate_limits.five_hour.used_percentage` and
@@ -18,7 +24,8 @@
 # on API-only billing rather than a Claude.ai subscription), the script
 # writes `{}` and the synthesizer falls back to Tier-1 file-size estimation.
 #
-# Hook registration: `.claude/settings.local.json` `hooks.Stop` array.
+# Hook registration: `.claude/settings.local.json` hooks.PostToolUse,
+# hooks.SubagentStop, and hooks.Stop arrays.
 
 set -euo pipefail
 

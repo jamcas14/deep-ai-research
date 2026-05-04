@@ -446,3 +446,45 @@ cases:
         challenging it. The rubric checks for hedge-language plus
         substantive content (≥25 words in the section).
     blocked_until: full_loop_eval_harness
+
+  - id: monitoring_routes_to_digest
+    category: routing
+    query: |
+      What's new in AI this week?
+    expected:
+      manifest_must_contain:
+        gate_decision.bucket: "monitoring"
+        finish_reason: "monitoring_routed_to_digest"
+        routed_to: "digest"
+      manifest_must_not_contain:
+        - "researcher-1-gen1.json"
+        - "synthesizer-final.md"
+      reasoning: |
+        Patch OO query-classifier gate: temporal "this week" + monitoring
+        phrasing + no recommendation/comparison → route to most recent
+        daily digest, skip the 7-agent loop. Asserts manifest carries the
+        gate decision and the routing finish_reason, AND that no full-loop
+        artifacts were created. The full-loop runs ~600-800K tokens; the
+        monitoring path runs <10K. Mis-routing in either direction is a
+        regression (research → digest underserves the user; monitoring →
+        research wastes 600K+ tokens).
+    blocked_until: full_loop_eval_harness
+
+  - id: recommendation_routes_to_loop
+    category: routing
+    query: |
+      Best LLM model for a personal companion that adheres to a unique
+      personality with extensive memory of past events?
+    expected:
+      manifest_must_contain:
+        gate_decision.bucket: "research_loop"
+      manifest_must_not_contain:
+        finish_reason: "monitoring_routed_to_digest"
+      reasoning: |
+        Patch OO counter-test: a recommendation query MUST NOT classify
+        as monitoring even though it could superficially be answered from
+        a digest. The gate's failure mode is misclassifying research as
+        monitoring; this case guards that direction. Pairs with
+        monitoring_routes_to_digest above — the two together prove the
+        gate works in both directions.
+    blocked_until: full_loop_eval_harness

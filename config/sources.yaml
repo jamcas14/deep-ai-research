@@ -155,6 +155,17 @@ lab_blogs:
     poll_interval_seconds: 86400
     rate_limit_key: rsshub.rssforever.com
 
+  # Patch XX (2026-05-04) — Chinese lab blogs via RSSHub. Native blogs at
+  # qwenlm.github.io and similar lack /feed.xml; RSSHub bridges to these.
+  # If the route 503s, the adapter logs and skips that cycle.
+  - name: qwen_blog
+    enabled: true
+    publication: "Qwen Blog (Alibaba)"
+    feed_url: "https://rsshub.rssforever.com/qwenlm/blog"
+    source_type: lab_blog
+    poll_interval_seconds: 86400
+    rate_limit_key: rsshub.rssforever.com
+
 # Subreddits. Adapter no-ops gracefully if REDDIT_* creds are missing in .env.
 # To enable: register a Reddit app at https://www.reddit.com/prefs/apps (script
 # type) and put the credentials in .env. Free tier is 100 QPM with OAuth.
@@ -248,8 +259,209 @@ hf_daily_papers:
     poll_interval_seconds: 14400
     rate_limit_key: huggingface.co
     # Custom JSON adapter; HF_TOKEN in .env bumps rate limits.
-podcasts: []       # Step 10
+podcasts:           # Patch QQ (2026-05-04) — faster-whisper transcription pipeline
+  - name: latent_space
+    enabled: true
+    publication: "Latent Space"
+    feed_url: "https://api.substack.com/feed/podcast/1090406.rss"
+    source_type: podcast_episode
+    poll_interval_seconds: 86400        # daily; episodes drop weekly
+    episode_cap_per_run: 5
+    rate_limit_key: substack
+
+  - name: dwarkesh
+    enabled: true
+    publication: "Dwarkesh Podcast"
+    feed_url: "https://feeds.acast.com/public/shows/63b76aa3935b400011415ec1"
+    source_type: podcast_episode
+    poll_interval_seconds: 86400
+    episode_cap_per_run: 5
+    rate_limit_key: feeds.acast.com
+
+  - name: mlst
+    enabled: true
+    publication: "Machine Learning Street Talk"
+    feed_url: "https://feeds.transistor.fm/machine-learning-street-talk-mlst"
+    source_type: podcast_episode
+    poll_interval_seconds: 86400
+    episode_cap_per_run: 5
+    rate_limit_key: feeds.transistor.fm
+
+  - name: no_priors
+    enabled: true
+    publication: "No Priors"
+    feed_url: "https://feeds.simplecast.com/JGE3yC0V"
+    source_type: podcast_episode
+    poll_interval_seconds: 86400
+    episode_cap_per_run: 5
+    rate_limit_key: feeds.simplecast.com
+
+  - name: cognitive_revolution
+    enabled: true
+    publication: "The Cognitive Revolution"
+    feed_url: "https://feeds.transistor.fm/the-cognitive-revolution-how-ai-changes-everything"
+    source_type: podcast_episode
+    poll_interval_seconds: 86400
+    episode_cap_per_run: 5
+    rate_limit_key: feeds.transistor.fm
+
 benchmarks: []     # Step 8
+
+# Patch RR (2026-05-04) — GitHub releases.atom feeds. Lowest-cost expansion
+# path: unauthenticated, standard Atom format, the generic RSSAdapter handles
+# them without per-repo code. Source type `github_release` so retrieval can
+# filter on infra-release content specifically when answering deployment /
+# version questions.
+github_releases:
+  - name: vllm_releases
+    enabled: true
+    publication: "vLLM Releases"
+    feed_url: "https://github.com/vllm-project/vllm/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: llama_cpp_releases
+    enabled: true
+    publication: "llama.cpp Releases"
+    feed_url: "https://github.com/ggml-org/llama.cpp/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: ollama_releases
+    enabled: true
+    publication: "Ollama Releases"
+    feed_url: "https://github.com/ollama/ollama/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: anthropic_sdk_python_releases
+    enabled: true
+    publication: "anthropic-sdk-python Releases"
+    feed_url: "https://github.com/anthropics/anthropic-sdk-python/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: claude_code_releases
+    enabled: true
+    publication: "Claude Code Releases"
+    feed_url: "https://github.com/anthropics/claude-code/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: transformers_releases
+    enabled: true
+    publication: "transformers Releases"
+    feed_url: "https://github.com/huggingface/transformers/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+  - name: sglang_releases
+    enabled: true
+    publication: "SGLang Releases"
+    feed_url: "https://github.com/sgl-project/sglang/releases.atom"
+    source_type: github_release
+    poll_interval_seconds: 21600
+    rate_limit_key: github.com
+
+# Patch WW (2026-05-04) — Bluesky native RSS for authority handles.
+# Bluesky exposes per-profile RSS at `bsky.app/profile/<handle>/rss` (verified
+# 2026-05-04 against 9 authority handles). No auth required, standard RSS 2.0
+# format. Handles are listed here only after live verification — adding an
+# unverified handle wastes adapter cycles polling a 404.
+bluesky:
+  - name: bsky_simon_willison
+    enabled: true
+    publication: "Simon Willison (Bluesky)"
+    feed_url: "https://bsky.app/profile/simonwillison.net/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_karpathy
+    enabled: true
+    publication: "Andrej Karpathy (Bluesky)"
+    feed_url: "https://bsky.app/profile/karpathy.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_nathan_lambert
+    enabled: true
+    publication: "Nathan Lambert (Bluesky)"
+    feed_url: "https://bsky.app/profile/natolambert.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_swyx
+    enabled: true
+    publication: "swyx (Bluesky)"
+    feed_url: "https://bsky.app/profile/swyx.io/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_sebastian_raschka
+    enabled: true
+    publication: "Sebastian Raschka (Bluesky)"
+    feed_url: "https://bsky.app/profile/rasbt.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_chip_huyen
+    enabled: true
+    publication: "Chip Huyen (Bluesky)"
+    feed_url: "https://bsky.app/profile/chiphuyen.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_soumith
+    enabled: true
+    publication: "Soumith Chintala (Bluesky)"
+    feed_url: "https://bsky.app/profile/soumith.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_tri_dao
+    enabled: true
+    publication: "Tri Dao (Bluesky)"
+    feed_url: "https://bsky.app/profile/tridao.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_demis_hassabis
+    enabled: true
+    publication: "Demis Hassabis (Bluesky)"
+    feed_url: "https://bsky.app/profile/demishassabis.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_anthropic
+    enabled: true
+    publication: "Anthropic (Bluesky)"
+    feed_url: "https://bsky.app/profile/anthropic.com/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
+
+  - name: bsky_deepmind
+    enabled: true
+    publication: "DeepMind (Bluesky)"
+    feed_url: "https://bsky.app/profile/deepmind.bsky.social/rss"
+    source_type: bluesky_post
+    poll_interval_seconds: 14400
+    rate_limit_key: bsky.app
 
 # Shared rate-limit broker. Each adapter declares a rate_limit_key; broker
 # enforces per-key caps so multiple Substack adapters share one budget.
@@ -272,3 +484,7 @@ rate_limits:
     requests_per_minute: 100
   reddit:
     requests_per_minute: 60      # PRAW handles this internally; doc here.
+  github.com:
+    requests_per_minute: 60      # GitHub atom feeds: 60 req/min unauth limit.
+  bsky.app:
+    requests_per_minute: 30      # Patch WW — Bluesky RSS, conservative.

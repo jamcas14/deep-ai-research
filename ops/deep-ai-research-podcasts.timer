@@ -1,0 +1,13 @@
+[Unit]
+Description=deep-ai-research — podcast transcription pipeline (Patch QQ)
+Documentation=https://github.com/jamcas14/deep-ai-research
+
+[Timer]
+# Daily at 03:00 local. Off-peak: transcription is CPU-heavy and slow.
+# Per-feed episode_cap_per_run (default 5) bounds total work — at 5 feeds × 5
+# episodes/run × ~6min each, worst-case daily budget is ~2.5h CPU.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

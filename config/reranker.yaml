@@ -1,0 +1,24 @@
+# Patch TT — cross-encoder reranker config.
+#
+# Off by default. Flip `enable: true` after running:
+#   uv sync --extra reranker
+#
+# First call downloads ~500MB of model weights from HuggingFace.
+# CPU inference: ~1-2s per query for top-50 candidates.
+# GPU inference (CUDA-enabled torch + RTX 5080): ~30-60ms.
+#
+# Once enabled, retrieval scoring becomes:
+#   final_score = rerank_score * authority_boost * recency_decay * domain_penalty
+#
+# (replacing RRF as the relevance signal — boost / decay / penalty still apply).
+
+enable: false
+
+# Default: BAAI/bge-reranker-v2-m3 (568M, Apache 2.0, MTEB-R 57.03).
+# Alternative: Qwen/Qwen3-Reranker-0.6B (MTEB-R 65.80). The Qwen model needs
+# custom inference code (AutoModelForCausalLM + yes/no token trick) which is
+# NOT yet wired in corpus_server/reranker.py. Use bge for now.
+model: BAAI/bge-reranker-v2-m3
+
+# Top-K from RRF to rerank. Larger K → better quality, slower. 50 balances both.
+top_k: 50

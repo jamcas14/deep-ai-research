@@ -38,6 +38,50 @@ Run the trigger checklist. If ANY item is yes-but-unstated AND the answer would 
 
 Record questions + answers in `manifest.json` under `clarifications: [{q, a}, ...]`. Empty list + skip rationale (quoting user text) is acceptable; empty list + no rationale is a contract violation.
 
+## Stage 0.5 — Query-classifier gate (Patch OO)
+
+**Purpose.** Not every query needs the full synthesis loop. Monitoring/informational queries ("what's new with X this week?", "any AI news today?") can be answered from the daily digest in <2 minutes at near-zero cost. The full loop fires for queries that need triangulation, comparison, or fresh web retrieval.
+
+**Be conservative.** This gate's failure mode is misclassifying a query that needs research as monitoring — the user gets a digest answer instead of synthesis. When uncertain, default to the full loop. Honesty contract §9 binds: forgetting depth is worse than picking the wrong cadence.
+
+**Classify the query into ONE of three routing buckets:**
+
+1. **`monitoring`** — answer from the most recent digest. ALL of:
+   - Query phrasing matches a `latest news` / `recent updates` / `what's happening` / `what landed` / `weekly recap` pattern
+   - Temporal scope is recent and bounded ("this week", "last few days", "yesterday", "today")
+   - Query is NOT asking for a recommendation, comparison, verification, or technical explanation
+   - No specific entity-version question (those go to entity_version path)
+
+2. **`entity_version`** — registry lookup (existing Patch GG path). Stage 1 classifies this; the gate just doesn't override.
+
+3. **`research_loop`** — full multi-agent synthesis. The default when monitoring + entity_version both fail.
+
+**`monitoring` routing path.** When the gate classifies a query as `monitoring`:
+
+```bash
+# Pick the most recent digest. Prefer the corpus-queryable copy so future
+# corpus_search queries can also retrieve it; the terminal copy is identical
+# minus frontmatter.
+latest_digest="$(ls -t corpus/digests/*.md 2>/dev/null | head -1)"
+if [[ -z "$latest_digest" ]]; then
+  latest_digest="$(ls -t digests/*.md 2>/dev/null | head -1)"
+fi
+```
+
+If a digest exists and is ≤7 days old, respond with a tight 4–8 line summary that:
+- Names the digest date you're sourcing from (so the user knows the recency window)
+- Surfaces the 3–6 most-authority-weighted items relevant to the query
+- Includes URLs from the digest (don't summarize without sources)
+- Ends with a one-line escape hatch: `If you want full synthesis on any of these (comparison, deeper analysis, recommendation), re-ask with explicit framing — e.g. "compare X and Y" or "should I use Z".`
+
+Skip Stages 1–9 entirely. Write a minimal `manifest.json` recording `{question, classification: ["monitoring"], routed_to: "digest", digest_path, started_at, finished_at, finish_reason: "monitoring_routed_to_digest"}`. Do NOT create the full scratch-dir artifact tree.
+
+If no digest exists or all digests are >7 days old, fall back to the full loop and record `monitoring_classification_overridden: "no_recent_digest"` in manifest. Never silently fail to respond.
+
+**Logging the gate decision.** Whatever the gate decides, write the decision + reason into `manifest.json.gate_decision: {bucket, reason, queried_text_excerpt, alternative_buckets_considered}`. Future eval cases will assert on this field.
+
+**Gate-regression escape valve.** If the user explicitly invokes the skill with a phrase like `/deep-ai-research full`, `/deep-ai-research synthesize`, or includes `(full synthesis)` in their query, the gate is bypassed and the query routes to the full loop regardless of phrasing. This is the explicit user override per honesty contract §9.
+
 ## Stage 1 — Classification + sub-question planning + scratch dir setup
 
 Generate a `<run-id>` of the form `YYYY-MM-DD-HHMMSS-<slug>` where slug is the first 30 chars of the question slugified. Create `.claude/scratch/<run-id>/`. Project root is `/home/jamie/code/projects/deep-ai-research` (use absolute paths for subagent inputs).
@@ -60,11 +104,51 @@ Generate a `<run-id>` of the form `YYYY-MM-DD-HHMMSS-<slug>` where slug is the f
 
 **Write `manifest.json`** with `{question, run_id, classification, started_at, clarifications, clarification_skipped_reason, sub_questions: [{id, focus, must_cover_families: [...]}]}`. Record the orchestrator-derived "obvious answer" label for the contrarian under `contrarian_obvious_answer` (one line; do NOT lift this from researcher output later — it must be your own prior).
 
-**Capture run-start usage snapshot (Patch CC).** Immediately after writing `manifest.json`, copy the latest Stop-hook snapshot into the run scratch dir as `usage_snapshot_start.json`:
+**Capture run-start usage snapshot (Patch CC).** Immediately after writing `manifest.json`, copy the latest hook snapshot into the run scratch dir as `usage_snapshot_start.json`:
 ```bash
 cp .claude/state/last_usage_snapshot.json .claude/scratch/<run-id>/usage_snapshot_start.json 2>/dev/null || echo '{}' > .claude/scratch/<run-id>/usage_snapshot_start.json
 ```
-The snapshot is populated by `ops/capture-usage.sh` after every assistant turn (registered in `.claude/settings.local.json`). It contains `five_hour_pct`, `seven_day_pct`, `context_window_pct`, `model_id`, `session_id`. If the file is missing (e.g. running from a fresh clone before Patch CC was set up), write `{}` so the synthesizer falls back to Tier-1 file-size estimation gracefully.
+The snapshot is populated by `ops/capture-usage.sh` after every assistant turn AND after every Agent dispatch (Patch JJ — registered as `Stop`, `SubagentStop`, and `PostToolUse` matching `Agent|Task` in `.claude/settings.local.json`). It contains `five_hour_pct`, `seven_day_pct`, `context_window_pct`, `model_id`, `session_id`. If the file is missing (e.g. running from a fresh clone before Patch CC was set up), write `{}` so the synthesizer falls back to Tier-1 file-size estimation gracefully.
+
+**Cross-run memory check (Patch ZZ).** Right after writing `manifest.json`, query the persistent cross-run index for similar past runs:
+
+```bash
+uv run python -c "
+from corpus_server.cross_run_memory import find_similar, extract_conclusion
+import json
+matches = find_similar('<question>', threshold=0.85, top_k=3)
+out = []
+for m in matches:
+    m['conclusion_excerpt'] = extract_conclusion(m['report_path'])
+    out.append(m)
+print(json.dumps(out))
+" > .claude/scratch/<run-id>/prior_research.json
+```
+
+If `prior_research.json` is non-empty after this call, the recency pass (Stage 2) will read it and include the prior conclusions as context. This avoids redundant research when the user asks a similar question they already had a /deep-ai-research run on (cosine ≥0.85 in 384-dim arctic-embed-s space).
+
+If no past runs match (file is `[]`), proceed normally — there's nothing to inject.
+
+**Per-stage cost attribution (Patch UU).** At the START of each stage from Stage 2 onward, append one line to `.claude/scratch/<run-id>/stage_log.jsonl` capturing the wall-clock timestamp + the latest hook snapshot. This is the prerequisite for targeted speed work — without it, every speed claim is structural inference rather than measurement.
+
+```bash
+# Run this at the start of each stage (replace <stage_name> with stage_2_recency_pass, etc.)
+{
+  echo "{\"stage\": \"<stage_name>\", \"started_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"snapshot_before\": $(cat .claude/state/last_usage_snapshot.json 2>/dev/null || echo '{}')}"
+} >> .claude/scratch/<run-id>/stage_log.jsonl
+```
+
+Stage names (use these exact strings so the synthesizer's Patch N step 7.5 can parse the log):
+- `stage_2_recency_pass`
+- `stage_3_research_fanout`
+- `stage_4_synthesizer_draft`
+- `stage_5_verifiers`
+- `stage_6_redispatch` (only when fit/structure re-dispatch fires; else omit)
+- `stage_7_critic`
+- `stage_8_synthesizer_final`
+- `stage_9_finalize`
+
+The synthesizer's Patch N step 7.5 reads `stage_log.jsonl`, computes per-stage wall-time as `next.started_at - this.started_at`, and per-stage 5h-window delta as `next.snapshot_before.five_hour_pct - this.snapshot_before.five_hour_pct`. The breakdown surfaces in §2 Plan-usage when stage_log.jsonl has ≥2 entries (otherwise §2 falls back to the cumulative tier-1 / tier-2 metric).
 
 ## Stage 2 — Forced recency pass (your direct retrieval, runs first)
 
@@ -77,6 +161,25 @@ Before any subagent dispatches, YOU run the recency pass. Use `corpus_recent` (M
 The `tool` field must be one of: `corpus_recent`, `corpus_search`, `corpus_fetch_detail`, `corpus_find_by_authority`, `glob`, `grep`. Case-sensitive; do NOT write `web_search` or invented values.
 
 Researchers and the contrarian read `recency_pass.json` as part of their input — running recency first means the latest items influence the research, not just the synthesis.
+
+**Patch ZZ — fold prior_research into recency pass.** If `prior_research.json` exists and is non-empty, copy its contents into `recency_pass.json` under a top-level key `prior_research_summaries`:
+
+```json
+{
+  "queries_run": [...],
+  "items": [...],
+  "corpus_density_signal": "moderate",
+  "prior_research_summaries": [
+    {"run_id": "...", "similarity": 0.91, "question": "...", "conclusion_excerpt": "..."},
+    ...
+  ]
+}
+```
+
+Researchers and the contrarian then know that the user has previously researched a similar question. Use this to:
+- Avoid retracing the same comparison-matrix axes (don't re-run "best 8B models" researcher fan-out if a 2-week-old run already produced that comparison; instead focus on what's NEW since then).
+- Identify which previously-found options are still SOTA vs superseded.
+- The synthesizer's §1 should reference the prior run if relevant ("This is consistent with the [date] run conclusion of X, plus new evidence Y").
 
 **Entity-version registry triangulation (Patch GG).** If classification includes `entity_version`, before running the corpus recency pass, invoke `ops/registry-query.sh <entity>` to triangulate across HuggingFace Hub + OpenRouter. The script writes JSON to stdout with shape `{entity, latest_id, latest_source, source_agreement, sources: {huggingface: [...], openrouter: [...]}}`. Write this verbatim into `recency_pass.json` under the `entity_version_resolution` key.
 
@@ -137,14 +240,17 @@ Dispatch one `Agent` call with `subagent_type: deep-ai-research-synthesizer`. Pa
 
 The synthesizer writes `.claude/scratch/<run-id>/synthesizer-draft.md` using the required structure (§1 Conclusion with runner-ups / §2 Confidence panel / §3 Findings opening with Comparison matrix / §4 Alternatives / §5 Open questions / §6 Citations).
 
-## Stage 5 — Parallel fan-out: citation verifier + fit verifier + structure verifier
+## Stage 5 — Parallel fan-out: citation verifier + fit verifier + structure verifier + critic (Patch PP)
 
-**In a SINGLE assistant message**, emit three `Agent` calls:
+**In a SINGLE assistant message**, emit FOUR `Agent` calls:
 - `deep-ai-research-verifier` (citation verifier) — re-checks every citation; writes `verifier.json`
 - `deep-ai-research-fit-verifier` — checks goal/constraint/category/implicit-constraint fit against query + clarifications; writes `fit_verifier.json`
 - `deep-ai-research-structure-verifier` (Patch L) — validates §1–§6 conformance, runner-up block presence, comparison matrix presence on multi-option queries, citations list parsability; writes `structure_verifier.json`
+- `deep-ai-research-critic` (Patch PP) — flags claim issues, coverage gaps, tag-discipline issues, open-question discipline issues; writes `critic.md`
 
-These three are independent: all read the draft, none write back, output paths are disjoint.
+All four are independent: each reads the draft, none reads another's output, output paths are disjoint. Patch PP (2026-05-04) elevated the critic from Stage 7 (sequential) to Stage 5 (parallel) — the critic prompt does not gate on verifier verdicts (confirmed via SKILL.md local read), so the dependency was advisory not real. Saves ~3–5 min per run.
+
+The critic still receives `retrieval_log.jsonl` and `manifest.json` in its dispatch so it can flag coverage gaps. The verifier outputs are NOT passed to the critic — those are handled at Stage 8 by the synthesizer's final pass, which integrates ALL of (draft, citation/fit/structure verifier outputs, critic feedback) into the final repair.
 
 ## Stage 6 — Fit-verifier or structure-verifier re-dispatch (conditional)
 
@@ -154,11 +260,11 @@ These three are independent: all read the draft, none write back, output paths a
 
 If fit failure or structure failure recurs after re-dispatch, surface as `finish_reason: "fit_failure_after_redispatch"` or `"structure_failure_after_redispatch"` and emit a final report whose §1 explicitly states the system could not produce a conformant recommendation and what's needed.
 
-## Stage 7 — Critic (sequential, blocks on stage 5)
+## Stage 7 — (folded into Stage 5 by Patch PP)
 
-Dispatch `deep-ai-research-critic` with: draft path, all three verifier outputs, retrieval log, manifest. Writes `.claude/scratch/<run-id>/critic.md` with claim issues, coverage gaps, tag-discipline issues, open-question discipline issues.
+The critic now runs in parallel with the three verifiers in Stage 5. This stage number is preserved as a placeholder so existing references in PLAN.md / NOTES.md / agent prompts remain valid; nothing dispatches here. Skip directly from Stage 6 to Stage 8.
 
-## Stage 8 — Synthesizer final (sequential, blocks on stage 7)
+## Stage 8 — Synthesizer final (sequential, blocks on stage 5 outputs)
 
 Dispatch the synthesizer for its second pass. Pass: draft, all three verifier outputs, critic feedback, retrieval log, manifest. The synthesizer:
 
@@ -171,13 +277,24 @@ Dispatch the synthesizer for its second pass. Pass: draft, all three verifier ou
 
 ## Stage 9 — Update manifest + return to caller
 
-**Capture run-end usage snapshot (Patch CC).** Before updating manifest, copy the latest Stop-hook snapshot into the run scratch dir as `usage_snapshot_end.json`:
+**Capture run-end usage snapshot (Patch CC + JJ).** Before updating manifest, copy the latest hook snapshot into the run scratch dir as `usage_snapshot_end.json`:
 ```bash
 cp .claude/state/last_usage_snapshot.json .claude/scratch/<run-id>/usage_snapshot_end.json 2>/dev/null || echo '{}' > .claude/scratch/<run-id>/usage_snapshot_end.json
 ```
-The Stop hook (registered in `.claude/settings.local.json`) writes a fresh snapshot to `.claude/state/last_usage_snapshot.json` after every assistant turn, so by the time you reach Stage 9 it reflects the cumulative usage including this run. The synthesizer's Patch N step 7.5 will diff `start` and `end` to compute true 5h/7d deltas.
+The hooks registered in `.claude/settings.local.json` (PostToolUse on `Agent|Task`, SubagentStop, Stop) write a fresh snapshot to `.claude/state/last_usage_snapshot.json` after each Agent dispatch and at session end. By the time you reach Stage 9 it reflects the cumulative usage including this run. The synthesizer's Patch N step 7.5 will diff `start` and `end` to compute true 5h/7d deltas.
 
 Update `manifest.json` with `finished_at`, `finish_reason`, `report_path`.
+
+**Index this run into cross-run memory (Patch ZZ).** Add the finished run to the persistent cross-run index so future similar queries can retrieve it:
+
+```bash
+uv run python -c "
+from corpus_server.cross_run_memory import index_run
+index_run('<run-id>', '<question>', '<report_path>')
+"
+```
+
+This embeds the question via arctic-embed-s and appends to `.claude/scratch/cross_run_index.json`. Future runs whose question has cosine ≥0.85 will fold this run's §1 conclusion into their recency pass via Patch ZZ's Stage 1 logic.
 
 **Print to the terminal:**
 - The report's **§1 Conclusion verbatim** — including the "Runner-ups" sub-block (Patch P / memory-feedback rule). The §1 conclusion is the executive summary; the runner-ups are part of it.

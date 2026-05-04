@@ -13,6 +13,8 @@ half_lives_days:
   arxiv_paper: 365
   podcast_episode: 90
   hf_daily_papers: 30
+  github_release: 90                # infra releases stay relevant ~3 months (Patch RR)
+  bluesky_post: 14                  # similar to tweets — short-form social (Patch WW)
 
 # Special: benchmark snapshots use most-recent-wins, not exponential decay.
 benchmarks_special_handling: true

@@ -72,6 +72,42 @@ def _load_decay() -> dict[str, Any]:
     return yaml.safe_load((PROJECT_ROOT / "config" / "decay.yaml").read_text())
 
 
+def _load_domain_penalties() -> dict[str, float]:
+    """Patch VV — load per-domain score multipliers. Missing file → no penalties."""
+    path = PROJECT_ROOT / "config" / "domain_penalties.yaml"
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError:
+        log.warning("domain_penalties.yaml malformed; ignoring")
+        return {}
+    raw = data.get("penalties") or {}
+    return {str(k).lower(): float(v) for k, v in raw.items()}
+
+
+def _domain_penalty(url: str) -> float:
+    """Patch VV — return penalty for the URL's host (1.0 if no penalty applies)."""
+    if not url:
+        return 1.0
+    penalties = _state.get("domain_penalties") or {}
+    if not penalties:
+        return 1.0
+    # Cheap host extraction: scheme://host/path → host.
+    m = re.match(r"^[a-z]+://([^/]+)", url, re.IGNORECASE)
+    host = (m.group(1) if m else url).lower()
+    # Strip leading "www."
+    if host.startswith("www."):
+        host = host[4:]
+    if host in penalties:
+        return penalties[host]
+    # Suffix match — "blog.medium.com" should hit "medium.com".
+    for d, p in penalties.items():
+        if host.endswith("." + d):
+            return p
+    return 1.0
+
+
 def _load_authorities() -> dict[str, dict[str, Any]]:
     """authority_id (slug) → entry. Used for weight lookups in scoring."""
     raw = yaml.safe_load((PROJECT_ROOT / "config" / "authorities.yaml").read_text())
@@ -93,6 +129,7 @@ def _ensure_state() -> None:
         _state["paths"] = paths
         _state["decay"] = _load_decay()
         _state["authorities"] = _load_authorities()
+        _state["domain_penalties"] = _load_domain_penalties()
 
 
 def _ensure_model() -> None:
@@ -118,6 +155,7 @@ class Hit:
     rrf_score: float
     authority_boost: float
     recency_decay: float
+    domain_penalty: float = 1.0  # Patch VV
     frontmatter: dict[str, Any] = field(default_factory=dict)
     path: str | None = None
     snippet: str | None = None
@@ -131,6 +169,7 @@ class Hit:
                 "rrf": round(self.rrf_score, 4),
                 "authority_boost": round(self.authority_boost, 3),
                 "recency_decay": round(self.recency_decay, 3),
+                "domain_penalty": round(self.domain_penalty, 3),
             },
             "publication": self.frontmatter.get("publication"),
             "title_or_url": self.frontmatter.get("url"),
@@ -299,6 +338,63 @@ def _age_days(fm: dict[str, Any]) -> float:
     return max(0.0, (today - d).days)
 
 
+# ---------- query result cache (Patch YY) ----------
+
+# In-process TTL cache. Scope: the lifetime of one corpus_server process,
+# which spans ~one /deep-ai-research run. Researchers issuing identical
+# queries (e.g. orchestrator's recency pass and a researcher's first call
+# overlap on "embedding reranker contextual chunking") hit the cache.
+# TTL covers a typical 25-min run with margin; longer-lived processes
+# self-trim on access so the cache doesn't grow unbounded.
+
+_CACHE_TTL_SECONDS = 600  # 10 minutes
+_CACHE_MAX_ENTRIES = 256
+_query_cache: dict[str, tuple[float, Any]] = {}
+
+
+def _cache_key(name: str, args: tuple, kwargs: dict[str, Any]) -> str:
+    """Deterministic cache key — JSON serialization with sorted kwargs."""
+    payload = {
+        "name": name,
+        "args": list(args),
+        "kwargs": {k: kwargs[k] for k in sorted(kwargs)},
+    }
+    return json.dumps(payload, default=str, sort_keys=True)
+
+
+def _cache_get(key: str) -> Any | None:
+    """Return cached value if present + not expired; else None."""
+    import time
+    entry = _query_cache.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if time.time() - ts > _CACHE_TTL_SECONDS:
+        _query_cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_put(key: str, value: Any) -> None:
+    """Store value with current timestamp. LRU-evict on overflow."""
+    import time
+    if len(_query_cache) >= _CACHE_MAX_ENTRIES:
+        # Evict the oldest entry (least-recently-stored).
+        oldest_key = min(_query_cache, key=lambda k: _query_cache[k][0])
+        _query_cache.pop(oldest_key, None)
+    _query_cache[key] = (time.time(), value)
+
+
+def _purge_expired() -> int:
+    """Remove all expired entries. Returns number removed."""
+    import time
+    now = time.time()
+    expired = [k for k, (ts, _) in _query_cache.items() if now - ts > _CACHE_TTL_SECONDS]
+    for k in expired:
+        _query_cache.pop(k, None)
+    return len(expired)
+
+
 # ---------- public tools ----------
 
 def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -307,7 +403,16 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
     Filters supported:
       since (ISO date), until (ISO date), source_types (list[str]),
       min_authority_boost (float), authors (list[str]).
+
+    Patch YY: results are TTL-cached for 10 minutes within the corpus_server
+    process. Identical (query, top_n, filters) calls hit the cache; the cache
+    is per-process (one /deep-ai-research run shares one cache).
     """
+    cache_key = _cache_key("search", (query,), {"top_n": top_n, "filters": filters})
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     _ensure_state()
     filters = filters or {}
 
@@ -316,6 +421,20 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
     by_chunk = _rrf_combine(bm25, vec)
     if not by_chunk:
         return []
+
+    # Patch TT — optional cross-encoder rerank. When enabled, replaces RRF
+    # as the relevance score; authority boost / decay / domain penalty still
+    # apply as multiplicative factors. When disabled, this is a no-op.
+    from corpus_server import reranker as _rr
+    if _rr.is_enabled():
+        candidates = [(cid, d["text"]) for cid, d in by_chunk.items()]
+        reranked = _rr.rerank(query, candidates)
+        # Update the per-chunk relevance score in-place so downstream code
+        # that reads d["rrf"] continues to work — the field now holds the
+        # cross-encoder score rather than the RRF score.
+        score_lookup = {cid: rerank_score for cid, _, rerank_score in reranked}
+        for cid, d in by_chunk.items():
+            d["rrf"] = score_lookup.get(cid, 0.0)
 
     # Group by source_id, keep the best chunk per source.
     best_per_source: dict[str, tuple[str, dict[str, Any]]] = {}
@@ -362,7 +481,9 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
         if min_boost is not None and boost < min_boost:
             continue
         decay = _recency_decay(_content_type_from_fm(fm), _age_days(fm))
-        score = d["rrf"] * boost * decay
+        # Patch VV — domain penalty multiplies score; default 1.0 (no penalty).
+        penalty = _domain_penalty(fm.get("canonical_url") or fm.get("url") or "")
+        score = d["rrf"] * boost * decay * penalty
         snippet = (d["text"] or "")[:300]
         hits.append(Hit(
             source_id=sid,
@@ -372,13 +493,16 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
             rrf_score=d["rrf"],
             authority_boost=boost,
             recency_decay=decay,
+            domain_penalty=penalty,
             frontmatter=fm,
             path=str(path.relative_to(PROJECT_ROOT)) if path else None,
             snippet=snippet,
         ))
 
     hits.sort(key=lambda h: h.score, reverse=True)
-    return [h.to_dict() for h in hits[:top_n]]
+    result = [h.to_dict() for h in hits[:top_n]]
+    _cache_put(cache_key, result)
+    return result
 
 
 def find_by_authority(authority_id: str, *, since: str | None = None, top_n: int = 50) -> list[dict[str, Any]]:
@@ -414,14 +538,21 @@ def find_by_authority(authority_id: str, *, since: str | None = None, top_n: int
 def recent(topic: str | None = None, *, hours: int = 168, top_n: int = 20) -> list[dict[str, Any]]:
     """Hard recency cut. Optionally narrow with vector similarity if topic given.
 
-    Powers the orchestrator's forced recency pass.
+    Powers the orchestrator's forced recency pass. Patch YY: TTL-cached.
     """
+    cache_key = _cache_key("recent", (), {"topic": topic, "hours": hours, "top_n": top_n})
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     _ensure_state()
     if topic:
         # Run search with strict since filter
         from datetime import timedelta
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).date().isoformat()
-        return search(topic, top_n=top_n, filters={"since": since})
+        result = search(topic, top_n=top_n, filters={"since": since})
+        _cache_put(cache_key, result)
+        return result
 
     # No topic: just list recent corpus items by frontmatter date.
     conn = _state["conn"]
@@ -452,7 +583,9 @@ def recent(topic: str | None = None, *, hours: int = 168, top_n: int = 20) -> li
         })
         seen += 1
     out.sort(key=lambda x: x["date"], reverse=True)
-    return out[:top_n]
+    result = out[:top_n]
+    _cache_put(cache_key, result)
+    return result
 
 
 def fetch_detail(source_id: str) -> dict[str, Any]:

@@ -19,6 +19,7 @@ import yaml
 from ingest.adapters._base import Adapter, RawSource
 from ingest.canonicalize import canonicalize, content_hash, source_id
 from ingest.frontmatter import Frontmatter, write_post
+from ingest.mention_detect import MentionDetector
 
 log = logging.getLogger("ingest.run")
 
@@ -115,7 +116,38 @@ def load_adapter(name: str, *, spec: dict | None = None) -> Adapter:
     )
 
 
-def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None:
+def build_canonical_url_index(corpus_dir: Path) -> dict[str, Path]:
+    """Patch SS — build canonical_url → existing-path map for ingestion-time dedup.
+
+    The same arXiv paper / blog post often comes in via 5+ adapters (HF Daily
+    Papers, AINews, Import AI, the lab blog itself, HN). Without dedup, each
+    adapter writes a separate chunk under a different slug — the corpus ends up
+    with 5 competing copies, confusing both retrieval ranking and the digest.
+
+    Walks corpus/ once at run-start. ~50ms on 8K chunks.
+    """
+    out: dict[str, Path] = {}
+    for path in corpus_dir.rglob("*.md"):
+        if not path.is_file() or "digests" in path.parts:
+            continue
+        try:
+            from ingest.frontmatter import read_post
+            fm, _ = read_post(path)
+        except Exception:  # noqa: BLE001
+            continue
+        if fm.canonical_url and fm.canonical_url not in out:
+            out[fm.canonical_url] = path
+    return out
+
+
+def write_one(
+    raw: RawSource,
+    *,
+    corpus_dir: Path,
+    dry_run: bool,
+    detector: MentionDetector | None = None,
+    canonical_index: dict[str, Path] | None = None,
+) -> Path | None:
     """Write a single RawSource to corpus/. Returns the file path, or None on skip."""
     canon = canonicalize(raw.url)
     sid = source_id(canon)
@@ -128,6 +160,14 @@ def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None
     type_dir = corpus_dir / _type_subdir(raw.source_type)
     out = type_dir / f"{slug}.md"
 
+    # Patch SS: skip if canonical_url already in corpus under a different path.
+    # The same arXiv paper from N adapters would otherwise produce N chunks.
+    if canonical_index is not None and canon in canonical_index:
+        existing = canonical_index[canon]
+        if existing != out:
+            log.debug("dedup skip: %s already at %s", canon, existing.name)
+            return existing
+
     if out.exists():
         # Compare content hash; if same, no-op (idempotent).
         try:
@@ -136,8 +176,20 @@ def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None
             if existing_fm.content_hash == chash:
                 log.debug("unchanged: %s", out.name)
                 return out
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass  # fall through to overwrite
+
+    # Patch NN: populate mentioned_authorities + mentioned_entities at write time.
+    # Adapter-supplied values win when non-empty; otherwise the detector fills them.
+    mentioned_authorities = list(raw.mentioned_authorities)
+    mentioned_entities = list(raw.mentioned_entities)
+    if detector is not None and not mentioned_authorities and not mentioned_entities:
+        try:
+            mentioned_authorities, mentioned_entities = detector.detect(
+                body, source_type=raw.source_type, title=raw.title
+            )
+        except Exception as e:
+            log.warning("mention detection failed for %s: %s", raw.url, e)
 
     fm_obj = Frontmatter(
         source_id=sid,
@@ -147,8 +199,8 @@ def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None
         canonical_url=canon,
         date=raw.date,
         authors=raw.authors,
-        mentioned_entities=raw.mentioned_entities,
-        mentioned_authorities=raw.mentioned_authorities,
+        mentioned_entities=mentioned_entities,
+        mentioned_authorities=mentioned_authorities,
         tags=raw.tags,
         ingested_at=datetime.now(timezone.utc),
         content_hash=chash,
@@ -160,6 +212,8 @@ def write_one(raw: RawSource, *, corpus_dir: Path, dry_run: bool) -> Path | None
         return out
 
     write_post(out, fm_obj, body)
+    if canonical_index is not None:
+        canonical_index[canon] = out
     log.info("wrote %s", out)
     return out
 
@@ -182,6 +236,8 @@ def _type_subdir(source_type: str) -> str:
         "hf_daily_papers": "hf-daily-papers",
         "arxiv_paper": "promoted-arxiv",
         "benchmark_snapshot": "benchmarks",
+        "github_release": "github-releases",  # Patch RR
+        "bluesky_post": "bluesky",            # Patch WW
     }.get(source_type, source_type)
 
 
@@ -191,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="don't write files")
     p.add_argument("--since", help="ISO datetime; only fetch entries newer", default=None)
     p.add_argument("--no-lock", action="store_true", help="skip flock (debug only)")
+    p.add_argument(
+        "--use-llm",
+        action="store_true",
+        help="enable Haiku-based mention disambiguation via `claude -p` "
+             "(opt-in; consumes Max-plan rate limits — ~4.5K tokens/call)",
+    )
     p.add_argument("-v", "--verbose", action="count", default=0)
     args = p.parse_args(argv)
 
@@ -211,13 +273,34 @@ def main(argv: list[str] | None = None) -> int:
         if lock_fd is None:
             return 0  # not an error — another run is in progress
 
+    detector = MentionDetector(use_llm=args.use_llm)
+    log.info(
+        "mention-detector: %d authorities loaded, llm_disambiguation=%s",
+        len(detector.authorities),
+        detector.use_llm,
+    )
+
+    canonical_index = build_canonical_url_index(corpus_dir)
+    log.info("canonical-url index built: %d existing URLs", len(canonical_index))
+
     try:
         sources = load_sources()
         since_dt = datetime.fromisoformat(args.since) if args.since else None
 
-        # Collect adapters from all categories (newsletters, lab_blogs, ...).
+        # Collect adapters from fast categories. `podcasts` is intentionally
+        # excluded — Patch QQ moves it to a separate `python -m ingest.podcasts`
+        # entry point on its own systemd timer because transcription is slow
+        # (~5-10 min per hour of audio) and would block other adapters.
         adapter_specs: list[dict] = []
-        for category in ("newsletters", "lab_blogs", "reddit", "hn", "hf_daily_papers", "podcasts"):
+        for category in (
+            "newsletters",
+            "lab_blogs",
+            "reddit",
+            "hn",
+            "hf_daily_papers",
+            "github_releases",  # Patch RR (2026-05-04)
+            "bluesky",          # Patch WW (2026-05-04)
+        ):
             adapter_specs.extend(sources.get(category) or [])
 
         if args.adapter:
@@ -233,21 +316,28 @@ def main(argv: list[str] | None = None) -> int:
             name = spec["name"]
             try:
                 adapter = load_adapter(name, spec=spec)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.error("failed to load adapter %s: %s", name, e)
                 continue
 
             log.info("running adapter %s", name)
             for raw in adapter.iter_new(since=since_dt):
                 try:
-                    write_one(raw, corpus_dir=corpus_dir, dry_run=args.dry_run)
+                    write_one(
+                        raw,
+                        corpus_dir=corpus_dir,
+                        dry_run=args.dry_run,
+                        detector=detector,
+                        canonical_index=canonical_index,
+                    )
                     total_written += 1
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     log.error("write failed for %s: %s", raw.url, e)
 
         log.info("ingestion complete: %d items processed", total_written)
         return 0
     finally:
+        detector.close()
         if lock_fd is not None:
             lock_fd.close()
 

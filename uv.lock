@@ -524,6 +524,10 @@ embed = [
 podcasts = [
     { name = "faster-whisper" },
 ]
+reranker = [
+    { name = "sentence-transformers" },
+    { name = "torch" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -551,9 +555,11 @@ requires-dist = [
     { name = "python-frontmatter", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "sentence-transformers", marker = "extra == 'embed'", specifier = ">=3.0.1" },
+    { name = "sentence-transformers", marker = "extra == 'reranker'", specifier = ">=3.0.1" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
+    { name = "torch", marker = "extra == 'reranker'", specifier = ">=2.1.0" },
 ]
-provides-extras = ["embed", "podcasts"]
+provides-extras = ["embed", "podcasts", "reranker"]
 
 [package.metadata.requires-dev]
 dev = [

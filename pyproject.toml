@@ -31,6 +31,15 @@ podcasts = [
     # Whisper transcription. Install with: uv sync --extra podcasts
     "faster-whisper>=1.0.3",
 ]
+reranker = [
+    # Cross-encoder reranker (Patch TT). Install with: uv sync --extra reranker
+    # Default model: BAAI/bge-reranker-v2-m3 (568M params, Apache 2.0, MTEB-R 57.03).
+    # Alternative: Qwen/Qwen3-Reranker-0.6B (MTEB-R 65.80) requires custom
+    # inference code via AutoModelForCausalLM — currently the bge path is used
+    # via sentence-transformers CrossEncoder for simpler integration.
+    "sentence-transformers>=3.0.1",
+    "torch>=2.1.0",
+]
 
 [dependency-groups]
 dev = [

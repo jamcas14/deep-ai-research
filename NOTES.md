@@ -800,3 +800,110 @@ All 7 patches from the approved plan are shipped. Next steps depend on user choi
 - The registry-query script's first run on `deepseek` (no -ai suffix) returned 0 HF results — HuggingFace's API filters on the EXACT org name, and DeepSeek's HF org is `deepseek-ai`. OpenRouter doesn't have this disambiguation problem (it filters on substring across the model id). The script's `source_agreement: 1` outcome is correct but exposes a real gap: entity name → registry org name is a many-to-many mapping that may need a small lookup table in `config/`. For now, the synthesizer's narrative around `source_agreement < 2` covers this (the report says "low confidence — registry sources disagree or one returned empty"), but a future patch could add an entity-alias map.
 - The v2 harness's "match by query prefix" heuristic is fragile but workable. The 6 blocked-on-harness cases all had templated queries that didn't match any past run; that's accurate (no past /deep-ai-research run was that-query-shaped). The matching kicks in once the user runs queries that DO line up with the case patterns.
 - All seven patches plus the underlying validation work fit comfortably in the user's preferences: bounded coverage on the analytical work, runner-up reasoning in §1, no architectural over-correction toward Report 1's prescription. The system is now structurally tighter on the discovery axis (Patch BB digest) AND the per-run telemetry axis (Patch CC token tally) — the two gaps the validation called out as load-bearing.
+
+---
+
+## 2026-05-04 — Wave 1: Patches NN, JJ, UU, OO from new research run
+
+**Built:**
+
+**Patch NN — Haiku mention-detection at ingestion.** New `ingest/mention_detect.py` runs at `write_one` time before frontmatter construction. Pipeline: regex pre-filter (50 authorities × full-name + 74 handle patterns, word-bounded case-insensitive) → if any hit and `ANTHROPIC_API_KEY` set, Haiku 4.5 disambiguates and extracts ML entities. Without API key, falls back to full-name-only matches (handles dropped — too ambiguous without LLM). Wired through `ingest/run.py` which now instantiates a `MentionDetector` once per ingest cycle. Extended `ingest/tag_engagements.py` to also write `kind='mentioned_with_link'` engagement records from `frontmatter.mentioned_authorities` — that's what actually drives the 4× retrieval boost (kind_weight 0.5 × authority_weight up to 1.0 = +0.5 to +1.0 per mention, capped at AUTHORITY_BOOST_CAP). New `ingest/backfill_mentions.py` retroactively tags existing corpus.
+
+Empirical: regex-only mode hit rate on first 1500 newsletters ≈ 12.5% (200 sample → 25 hits); full-corpus regex-only backfill produced 110 chunks with mentions, yielding 134 `mentioned_with_link` engagement records after `tag_engagements`. The dead boost is now firing on third-party content. With ANTHROPIC_API_KEY set, expected hit rate is higher (handle matches + paraphrase mentions Haiku catches but regex misses).
+
+**Patch JJ — PostToolUse + SubagentStop usage hooks.** Patch CC's Stop-hook-only design left `usage_snapshot_end.json` mirroring start when /deep-ai-research ran inside a single turn (Stop fires session-end, not mid-turn). Patch JJ adds `PostToolUse` matcher `Agent|Task` and `SubagentStop` so the snapshot updates after every Agent dispatch. The script itself (`ops/capture-usage.sh`) is unchanged — the hook fires more often, atomic write means only the latest sticks. Smoke-tested with sample payload.
+
+**Patch UU — Per-stage cost attribution.** New `stage_log.jsonl` written by orchestrator at the start of each stage (Stages 2–9) with `{stage, started_at, snapshot_before}`. Synthesizer Patch N step 7.5 now reads it and renders a per-stage breakdown sub-bullet in §2 Plan-usage when ≥2 entries exist. Stage names are an enumerated set so synthesizer can parse without ambiguity. Wall-time per stage = `next.started_at - this.started_at`; 5h-window delta per stage = `next.snapshot_before.five_hour_pct - this.snapshot_before.five_hour_pct`. Identifies bottleneck stages without guesswork.
+
+**Patch OO — Query-classifier gate.** New SKILL.md Stage 0.5 routes `monitoring` queries (linguistic patterns: "what's new", "any updates", "this week" + no recommendation/comparison) to the most recent daily digest, bypassing the 7-agent loop. Conservative defaults: when uncertain, falls through to full loop (better to over-research than under-research per honesty contract §9). User override via `(full synthesis)` phrasing in query. Two new eval cases in `evals/cases.yaml` — `monitoring_routes_to_digest` (assert manifest.gate_decision.bucket = "monitoring", finish_reason = "monitoring_routed_to_digest", no full-loop artifacts) and `recommendation_routes_to_loop` (counter-test: ensures recommendation queries DON'T misclassify). Both blocked_until full_loop_eval_harness so the behavioral assertions only trigger via `evals/run_full_loop.py`.
+
+**Cost/cadence:** ~$0.05–0.20/day for Patch NN at current ingestion volume (regex pre-filter eliminates ~80% of would-be Haiku calls); the rest is essentially zero-cost. Backfill one-time cost: ~$0.50–2.00 with ANTHROPIC_API_KEY set, $0 in regex-only mode (which still produced 134 engagement records).
+
+**Verification status:**
+- All 22 existing eval cases still pass (run_all.py retrieval-layer).
+- New eval cases (24 total now) include the routing pair — both pass min_hits at retrieval layer.
+- mypy clean on new code (`ingest/mention_detect.py` imports `Any` from typing).
+- ruff clean except for pre-existing RUF002 unicode-style nits (× and em-dashes) which match the rest of the codebase.
+
+**Surprises:**
+- The report's framing — "the 4× authority boost is dead because mentioned_authorities is empty" — is half-correct. The boost was firing on `engagements` records of `kind='author'` (publication/author match, populated by `tag_engagements.py`); what was dead was the `kind='mentioned_with_link'` path because nothing wrote those records. Patch NN fixes the missing path; the existing `kind='author'` boost was always live. Roughly: the report identified the right symptom but the diagnosis was incomplete. Implementation requires both `mention_detect.py` to populate frontmatter AND `tag_engagements.py` to write the engagement records.
+- 12.5% full-name regex hit rate on newsletters is below my expectation (probably ~25-30%). Most newsletters use surnames-only ("Karpathy noted...") or handles ("@swyx"), which the conservative full-name-only regex skips. Setting ANTHROPIC_API_KEY should substantially raise the hit rate via Haiku disambiguation of these cases.
+- PostToolUse + SubagentStop firing means `capture-usage.sh` runs many times per turn — atomic write means only the last sticks, but it does mean a small constant CPU overhead per Agent dispatch. Acceptable trade-off for accurate mid-run telemetry.
+
+**Wave 1 done. Next (per plan):**
+- Wave 2 (P1): PP (critic parallel with verifiers), SS (canonical-URL dedup at ingestion), RR (GitHub releases.atom adapter), QQ (podcast adapter), VV (SEO domain penalty at retrieval), II (researcher hard-cap enforcement), LL (wall-time self-flag).
+- Wave 3 (P2): TT (Qwen3-Reranker after Patch NN works), WW (Bluesky openrss.org bridge), XX (Chinese lab RSS), YY (retrieval result caching), ZZ (cross-run memory).
+
+---
+
+## 2026-05-04 — Wave 2: Patches PP, SS, RR, VV, II, LL, QQ + Patch NN refactor
+
+**Refactor — Patch NN now uses `claude -p` instead of API key.** Per durable user preference (`memory/feedback_use_claude_code_not_api_key.md`), the LLM disambiguation path no longer requires `ANTHROPIC_API_KEY`. It shells out to `claude -p --tools "" --no-session-persistence --disable-slash-commands --system-prompt <S> --output-format json --model claude-haiku-4-5 <user>` using the user's logged-in Max subscription. `--tools ""` cuts cache_creation from ~28K to ~4.3K tokens per call; back-to-back calls within the 5-min cache TTL get the 90% read discount. Default is now regex-only (zero subscription cost); `--use-llm` flag opts into Haiku disambiguation. Live-tested: correctly tagged "Andrej Karpathy" + "Sebastian Raschka" + "swyx (Shawn Wang)" via @swyx handle, plus extracted nanoGPT, GPT-2, PyTorch entities. Subscription rate-limit cost: ~4.3K tokens per call.
+
+**Patch PP — Critic parallel with verifiers.** Moved critic dispatch from Stage 7 (sequential) to Stage 5 (parallel with citation+fit+structure verifiers). Confirmed via SKILL.md read that critic doesn't gate on verifier verdicts — the dependency was advisory not real. Saves ~3-5 min per run. Stage 7 is now a placeholder section preserving the numbering for backwards reference; Stage 8 (synthesizer final) blocks on Stage 5 outputs (which now include critic.md alongside the three verifier JSONs).
+
+**Patch SS — Canonical-URL dedup at ingestion.** New `build_canonical_url_index()` walks corpus/ once at `ingest/run.py main()` start, producing a `dict[canonical_url, Path]`. `write_one()` now skips writes whose canonical_url is already in the index under a different path, preventing the same arXiv paper from N adapters yielding N chunks. Cost: ~50ms startup scan on 8K chunks; O(1) lookup per write.
+
+**Patch RR — GitHub releases.atom adapter entries.** 7 new entries in `config/sources.yaml` `github_releases:` category: vLLM, llama.cpp, ollama, anthropic-sdk-python, claude-code, transformers, sglang. Generic RSSAdapter handles `releases.atom` feeds (standard Atom format). New source_type `github_release` with directory mapping `corpus/github-releases/`, decay half-life 90d, digest category `releases_and_infra`. Live-tested: vLLM feed returned 10 items in dry-run.
+
+**Patch VV — SEO domain penalty at retrieval.** New `config/domain_penalties.yaml` with 11 initial entries (medium.com 0.6, hackernoon 0.5, locallyuncensored 0.3, etc). `corpus_server/server.py` loads them in `_ensure_state()`, applies `_domain_penalty(url)` as a multiplicative factor in score: `score = rrf * boost * decay * penalty`. Smoke-tested: medium.com → 0.6, www.medium.com → 0.6, blog.medium.com → 0.6 (suffix match), anthropic.com → 1.0 (no penalty on vendor primary sources). Replaces prompt-only Patch AA.
+
+**Patch II — Researcher hard-cap enforcement.** Structure verifier now reads `retrieval_log.jsonl`, counts entries per `agent: researcher-N`, and emits `researcher_cap_check` field in `structure_verifier.json`. Soft signal: cap violation does NOT trigger structure re-dispatch on its own (the calls already happened — can't undo). The synthesizer surfaces the violation in §2 Weakest assumption when verdict=fail. Honesty-contract §9 binds the 8-call cap; this makes it visible.
+
+**Patch LL — Wall-time self-flag at Stage 9.** Synthesizer step 7.5 now reads `manifest.started_at`, computes wall_seconds, and prepends a regression warning to the §2 Plan-usage bullet if >40 min (40 = honesty contract §9 hard ceiling). Independent of token cost — a run can stay under 1.2M tokens but blow wall time on slow web fetches or excessive re-dispatch. Both budgets bind.
+
+**Patch QQ — Podcast adapter (faster-whisper).** New `ingest/adapters/podcast.py` with PodcastAdapter class. Pipeline: RSS parse → audio download → ffmpeg normalize to 16kHz mono WAV → faster-whisper medium (int8, CPU) → markdown transcript. Caches every intermediate artifact (audio, normalized WAV, transcript) so re-runs only re-fetch new episodes. New `ingest/podcasts.py` standalone runner (separate flock from main ingest, separate canonical-url index). New `ops/deep-ai-research-podcasts.timer` + `service` (daily 03:00, CPUWeight=30, IOWeight=30, Nice=15, MemoryMax=4G, TimeoutStartSec=4h). 5 podcast feeds configured: Latent Space, Dwarkesh, MLST, No Priors, Cognitive Revolution. Per-feed episode_cap_per_run=5 caps initial backfill. Excluded from main 15-min timer. Activates with `uv sync --extra podcasts` (faster-whisper is optional dep). ffmpeg required + verified on PATH. Smoke-tested without faster-whisper installed: gracefully logs warning and yields 0 episodes (does not crash).
+
+**Verification status:**
+- All 24 eval cases pass (23 ✓, 1 ⏸ blocked_until step_9_twitter_ingestion).
+- Smoke tests: ainews dry-run + podcast adapter import + domain penalty unit + cohere-style live test of regex+LLM mention path.
+- mypy clean on new files (5 pre-existing errors in run.py unchanged).
+- ruff clean except pre-existing RUF002 unicode-style nits matching codebase convention.
+
+**Surprises:**
+- The `claude -p` cache_creation cost depends heavily on which flags you pass. Default ~28K tokens for tools loaded; `--tools ""` brings it to ~4.3K. The flag combination matters more than I expected.
+- Each separate `claude -p` invocation creates a NEW session by default — back-to-back calls within 5 min get partial cache reuse but not the full 90% discount the API would give within a single session. For batch ingestion enhancement this is fine; for per-chunk-as-it-arrives it'd cost ~$0.008/call which is too much.
+- Patch PP dropping from 5 stages (recency/research/draft/verifiers/critic/final) to 4 (recency/research/draft/parallel-verifiers+critic/final) saves a full sequential hop. The wall-time savings should show up immediately in stage_log.jsonl breakdowns once Patch UU snapshots have been captured.
+- Podcast feeds have remarkably consistent RSS structure across hosts (Substack, Acast, Transistor, Simplecast). The generic enclosure-extraction logic handled all 5 without per-host code.
+
+**Wave 2 done. Next (Wave 3 P2):**
+- TT (Qwen3-Reranker-0.6B after Patch NN works) — cross-encoder over top-K RRF hits
+- WW (Bluesky openrss.org bridge) — profile-level RSS for AT Protocol authority handles
+- XX (Chinese lab RSS — DeepSeek + Qwen blogs)
+- YY (retrieval result caching within run)
+- ZZ (persistent cross-run memory via topic-fingerprint lookup)
+
+---
+
+## 2026-05-04 — Wave 3: Patches WW, XX, YY, ZZ, TT
+
+**Patch WW — Bluesky native RSS.** Discovered while investigating openrss.org bridge: Bluesky exposes `bsky.app/profile/<handle>/rss` natively. Direct integration is cleaner than the openrss.org bridge (which 503'd or 429'd repeatedly). 11 verified handles in `config/sources.yaml` `bluesky:` category — Karpathy, Simon Willison, Nathan Lambert, swyx, Sebastian Raschka, Chip Huyen, Soumith, Tri Dao, Demis Hassabis, Anthropic, DeepMind. New source_type `bluesky_post` with 14d decay (similar to tweet), digest bucket `community_pulse`. Live-tested: 29 items from Simon Willison's feed.
+
+**Patch XX — Chinese lab RSS via RSSHub.** DeepSeek and Qwen native blogs lack /feed.xml. RSSHub's `qwenlm/blog` route works (verified 200, returned 5 recent Qwen blog posts including Qwen3Guard, Qwen-Image, GSPO paper, Qwen-MT). Added `qwen_blog` adapter under `lab_blogs:`. DeepSeek RSSHub route 503'd at probe time — skipped for now; can add later when route returns.
+
+**Patch YY — Retrieval result cache within run.** Added in-memory TTL cache (10min, max 256 entries, LRU evict on overflow) to `corpus_server/server.py`. Wraps `search()` and `recent()`. Cache key = JSON-serialized (function_name, args, sorted-kwargs). Smoke test: cold call 10.7s (includes embed model load), cached call 0.0ms — 378,000× speedup on repeat queries within the run. The 10min TTL covers a typical 25-min run with margin while preventing unbounded memory growth on a long-lived MCP server.
+
+**Patch ZZ — Persistent cross-run memory.** New `corpus_server/cross_run_memory.py`. Index format: `.claude/scratch/cross_run_index.json` keyed on run_id, with `{question, finished_at, report_path, embedding}` per record. `find_similar(query, threshold=0.85, top_k=3)` uses arctic-embed-s cosine similarity to surface related past runs. Backfilled all 7 prior reports. Verified: query "best LLM model for personality and memory" returns 3 matches (sim 0.911, 0.904, 0.878) — all from this morning's earlier sessions. Wired into SKILL.md Stage 1 (write `prior_research.json`) and Stage 2 (fold into recency_pass.json under `prior_research_summaries`). Also wired into Stage 9 (`index_run` after final write). Future similar queries inject prior conclusions into the recency-pass context, avoiding redundant research.
+
+**Patch TT — Cross-encoder reranker (skeleton).** New `corpus_server/reranker.py` with sentence-transformers CrossEncoder integration. Default model `BAAI/bge-reranker-v2-m3` (568M params, MTEB-R 57.03, Apache 2.0). Off by default; opt-in via `DAIR_RERANKER_ENABLED=1` env var or `enable: true` in `config/reranker.yaml`. New `[reranker]` optional dep group; `uv sync --extra reranker` installs sentence-transformers + torch. Wired into `search()` after RRF combine: when enabled, replaces RRF as the relevance score (boost / decay / domain_penalty still apply multiplicatively). When disabled, no-op. Qwen3-Reranker-0.6B (MTEB-R 65.80, the report's preferred model) DEFERRED — uses custom AutoModelForCausalLM yes/no token inference that doesn't fit the CrossEncoder API. Bge is the pragmatic default; Qwen3 upgrade is a follow-on patch when sentence-transformers either adds support or someone wires the custom inference code.
+
+**Verification:** All 23 unblocked eval cases still pass. mypy clean on new files. Patch YY verified with timing test. Patch ZZ verified with backfill + similarity query. Patch TT verified default-OFF doesn't break search.
+
+**Surprises:**
+- Bluesky native RSS just works. The original recommendation suggested openrss.org as a bridge, but the bridge has rate limits and timeouts. Native RSS is faster and more reliable.
+- Cross-run memory similarity scores were higher than I expected — the same-day personality+memory queries clustered tightly at 0.91. This means the gate threshold (0.85) is well-calibrated for genuinely similar queries while still filtering out unrelated ones (queries about "speed" vs "personality" had similarity around 0.4-0.6).
+- The reranker's lazy-load pattern was surprisingly important — without `_state` tri-state, every `search()` call would attempt to load sentence-transformers, even when disabled, slowing every query by hundreds of ms.
+
+**Wave 3 done. Where we are:**
+- Wave 1 ✓: NN, JJ, UU, OO
+- Wave 2 ✓: PP, SS, RR, VV, II, LL, QQ
+- Wave 3 ✓: WW, XX, YY, ZZ, TT (skeleton)
+
+**Wave 4 (P3 — long-horizon):**
+- AAA — Qwen3-Embedding-0.6B + contextual chunking (1024-dim migration)
+- BBB — Eval expansion to ≥30 cases
+- CCC — DSPy/GEPA offline prompt optimization (depends on BBB)
+- DDD — MCP filter additions (date_range × entity × source_type, corpus_count, corpus_related)
+- EEE — Daily digest Haiku per-bucket prose summaries
+- FFF — Source-discovery automation (monthly query for unsourced mentioned-entities)
+- Future: Qwen3-Reranker-0.6B integration with custom inference code (15% MTEB-R lift over bge)

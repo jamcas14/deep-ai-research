@@ -50,14 +50,17 @@ CATEGORY_MAP: dict[str, str] = {
     "arxiv_paper": "papers",
     "hn_post": "community_pulse",
     "reddit_post": "community_pulse",
+    "bluesky_post": "community_pulse",        # Patch WW (2026-05-04)
     "podcast_episode": "audio_video",
     "benchmark_snapshot": "benchmarks",
+    "github_release": "releases_and_infra",   # Patch RR (2026-05-04)
     "digest": "_internal_skip",  # don't include past digests in today's digest
 }
 
 CATEGORY_ORDER: list[tuple[str, str]] = [
     ("newsletters_and_analysis", "Newsletters & Analysis"),
     ("papers", "Papers"),
+    ("releases_and_infra", "Releases & Infra"),
     ("community_pulse", "Community Pulse (HN, Reddit)"),
     ("audio_video", "Audio / Video"),
     ("benchmarks", "Benchmarks"),

@@ -204,6 +204,28 @@ citation-verifier + fit-verifier feedback.
    warning to the bullet: `⚠ exceeded the 30% / 5h budget target —
    this is a regression.`
 
+   **Wall-time self-flag (Patch LL).** Read `manifest.started_at` and
+   compute `wall_seconds = now - started_at`. If `wall_seconds > 2400`
+   (40 minutes — the honesty contract §9 hard ceiling), prepend the
+   §2 Plan-usage bullet with a regression warning:
+
+   ```
+   - **Plan usage:** ⚠ Run wall time was Xm Ys (>40m honesty contract §9
+     hard ceiling — flagging as a planning regression). [rest of normal
+     plan-usage bullet here]
+   ```
+
+   The 40-minute ceiling is independent of token cost; a run can stay
+   under 1.2M tokens but blow the wall-time budget if researchers
+   serially do slow web fetches, or if the orchestrator re-dispatches
+   too many times. Both budgets bind. Direction: 25-min target,
+   40-min ceiling; render the warning in the user-facing report so the
+   user sees the regression in their own runs without digging through
+   logs.
+
+   If `manifest.started_at` is missing or unparseable, skip the
+   wall-time check (don't block the report on it).
+
    **Tier 1 — fallback (when snapshots are missing or null).** Read
    `manifest.json` for `token_tally: {input, output}` if populated.
    Read `config/plan.yaml` for `tier` and `monthly_budget_tokens`.
@@ -222,6 +244,42 @@ citation-verifier + fit-verifier feedback.
    non-null rate-limit fields. Fall through cleanly without erroring
    if anything is missing — the metric should always render
    *something*, never silently fail.
+
+   **Per-stage breakdown (Patch UU).** After rendering the chosen tier,
+   read `.claude/scratch/<run-id>/stage_log.jsonl`. If the file exists
+   and has ≥2 entries, render a per-stage breakdown sub-bullet:
+
+   ```
+   - **Stage breakdown:**
+     - stage_2_recency_pass: Xs wall, +Y.Y% 5h
+     - stage_3_research_fanout: Xs wall, +Y.Y% 5h
+     - stage_4_synthesizer_draft: Xs wall, +Y.Y% 5h
+     - stage_5_verifiers: Xs wall, +Y.Y% 5h
+     - stage_7_critic: Xs wall, +Y.Y% 5h
+     - stage_8_synthesizer_final: Xs wall, +Y.Y% 5h
+   ```
+
+   Computation per stage:
+   - `wall_seconds = next_entry.started_at - this_entry.started_at`
+     (the LAST entry's wall_seconds = end_snapshot.ts - last_entry.started_at)
+   - `delta_5h_pct = next_entry.snapshot_before.five_hour_pct - this_entry.snapshot_before.five_hour_pct`
+     (omit the 5h delta sub-clause if either side is null; just render `Xs wall`)
+
+   The breakdown identifies bottleneck stages without guesswork. Skip
+   stages whose entry doesn't exist (e.g., stage_6_redispatch only fires
+   on re-dispatch). If `stage_log.jsonl` has fewer than 2 entries (the
+   orchestrator didn't write per-stage entries — older skill version,
+   or a fresh clone before Patch UU shipped), skip the breakdown
+   sub-bullet entirely.
+
+   **Researcher cap surface (Patch II).** Read `structure_verifier.json`
+   for `researcher_cap_check`. If `verdict == "fail"`, append the
+   violator detail to §2 Weakest assumption sub-bullet: `Researcher cap
+   violated: <list of researchers and their counts vs the 8-call cap>.
+   Indicates over-decomposition or insufficient researcher discipline;
+   does not change the recommendation but signals a planning regression.`
+   This is informational — the researcher calls already happened, so the
+   synthesizer can't fix the violation, only flag it.
 
 8. **Pre-write structural check (Patch F-light).** Before writing the
    final report, verify your draft conforms to the spec:

@@ -21,7 +21,6 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Iterable
 
 import yaml
 
@@ -83,10 +82,36 @@ def detect_authors(
     return out
 
 
+def _name_to_slug_map(authorities: list[dict]) -> dict[str, str]:
+    """Map authority full-name → slug, for resolving Frontmatter.mentioned_authorities
+    (which stores full names) to engagement authority_ids (which use slugs)."""
+    out: dict[str, str] = {}
+    for entry in authorities:
+        name = entry.get("name") or ""
+        if not name:
+            continue
+        out[name] = slugify(name)
+    return out
+
+
 def tag(corpus_dir: Path, sqlite_path: Path, *, dry_run: bool = False) -> tuple[int, int]:
-    """Returns (sources_examined, engagements_inserted)."""
-    matchers = build_matchers(load_authorities())
-    log.info("loaded %d authority matchers", len(matchers))
+    """Returns (sources_examined, engagements_inserted).
+
+    Two engagement kinds are written:
+      - 'author' — when fm.publication or fm.authors matches an authority
+      - 'mentioned_with_link' — when fm.mentioned_authorities lists an authority
+        (populated by ingest.mention_detect at write time, Patch NN). Drives the
+        4× retrieval boost on third-party content that DISCUSSES an authority's
+        work without being authored by them.
+    """
+    authorities = load_authorities()
+    matchers = build_matchers(authorities)
+    name_to_slug = _name_to_slug_map(authorities)
+    log.info(
+        "loaded %d authority matchers, %d name->slug entries",
+        len(matchers),
+        len(name_to_slug),
+    )
 
     conn = connect(sqlite_path)
     init_schema(conn)
@@ -96,15 +121,14 @@ def tag(corpus_dir: Path, sqlite_path: Path, *, dry_run: bool = False) -> tuple[
     for path in corpus_dir.rglob("*.md"):
         try:
             fm, _ = read_post(path)
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
         examined += 1
-        matched = detect_authors(fm.publication or "", fm.authors or [], matchers)
-        if not matched:
-            continue
-        for authority_id in matched:
+
+        author_matches = detect_authors(fm.publication or "", fm.authors or [], matchers)
+        for authority_id in author_matches:
             if dry_run:
-                log.debug("[dry-run] would tag %s → %s", fm.source_id, authority_id)
+                log.debug("[dry-run] would tag %s → %s (author)", fm.source_id, authority_id)
                 continue
             cur = conn.execute(
                 "INSERT OR IGNORE INTO engagements"
@@ -112,6 +136,28 @@ def tag(corpus_dir: Path, sqlite_path: Path, *, dry_run: bool = False) -> tuple[
                 "VALUES (?, ?, 'author', ?)",
                 (authority_id, fm.source_id, json.dumps({
                     "publication": fm.publication, "via": "publication-or-author-match",
+                })),
+            )
+            if cur.rowcount > 0:
+                inserted += 1
+
+        # Patch NN: write 'mentioned_with_link' records from frontmatter mentions.
+        # Skip authorities already tagged as authors (the 'author' record dominates
+        # in the boost calculation; double-counting would inflate the score).
+        for mentioned_name in (fm.mentioned_authorities or []):
+            slug = name_to_slug.get(mentioned_name)
+            if not slug or slug in author_matches:
+                continue
+            if dry_run:
+                log.debug("[dry-run] would tag %s → %s (mentioned)", fm.source_id, slug)
+                continue
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO engagements"
+                "(authority_id, source_id, kind, metadata) "
+                "VALUES (?, ?, 'mentioned_with_link', ?)",
+                (slug, fm.source_id, json.dumps({
+                    "via": "mention-detect-haiku",
+                    "name": mentioned_name,
                 })),
             )
             if cur.rowcount > 0:

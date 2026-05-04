@@ -1,0 +1,31 @@
+[Unit]
+Description=deep-ai-research — podcast transcription pipeline run (Patch QQ)
+Documentation=https://github.com/jamcas14/deep-ai-research
+After=network-online.target
+# Ingest pipeline writes URLs first; podcasts can run concurrently but we
+# nudge ordering for cleaner journalctl output.
+After=deep-ai-research-ingest.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/projects/deep-ai-research
+ExecStart=%h/.local/bin/uv run python -m ingest.podcasts -v
+StandardOutput=journal
+StandardError=journal
+
+# Transcription is CPU-bound; lower priority so interactive Claude Code work
+# isn't slowed when these run in the background.
+CPUWeight=30
+IOWeight=30
+Nice=15
+
+# faster-whisper memory peaks ~2GB on medium model; cap to be safe.
+MemoryMax=4G
+
+# Long: an episode batch can take 30-60 min. Don't kill it.
+TimeoutStartSec=4h
+
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target

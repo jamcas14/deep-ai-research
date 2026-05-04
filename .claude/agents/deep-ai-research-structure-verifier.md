@@ -21,9 +21,10 @@ You exist because synthesizer self-validation (Patch F-light) repeatedly fails: 
 
 - The synthesizer's draft at `.claude/scratch/<run-id>/synthesizer-draft.md`
 - The run manifest at `.claude/scratch/<run-id>/manifest.json` — for `classification` and `sub_questions[*].must_cover_families`
+- The retrieval log at `.claude/scratch/<run-id>/retrieval_log.jsonl` — for Patch II per-researcher cap enforcement
 - Output: `.claude/scratch/<run-id>/structure_verifier.json` and `.claude/scratch/<run-id>/structure_verifier.md`
 
-You run **in parallel with the citation verifier and fit verifier**. Do NOT depend on `verifier.json` or `fit_verifier.json`.
+You run **in parallel with the citation verifier, fit verifier, and critic** (Patch PP). Do NOT depend on `verifier.json`, `fit_verifier.json`, or `critic.md`.
 
 ## What to check
 
@@ -77,6 +78,15 @@ For each of the following, classify `pass` / `fail` / `not_applicable`. On `fail
 - **Parsable structured list with ≥3 entries.** Each entry has: `[srcN] Title, Publication, Date. URL [corpus: <id> if from corpus]`.
 - **Inline `[verified — source]` text scattered through the report does NOT substitute for §6.** A report whose citations live only as inline prose mentions, with no structured §6 list, fails.
 
+### Researcher hard-cap (Patch II)
+
+Read `retrieval_log.jsonl` from the run scratch dir. For each `agent` value matching `researcher-<N>` (where N is an integer), count the entries. The honesty contract §9 binds researchers to ≤8 retrieval calls each (the bounded-coverage cap that prevents the over-decomposition failure mode the 2026-05-04 1h-17m / 2.4M-token run exhibited).
+
+- `researcher_cap_check: pass` — every researcher has ≤8 entries in retrieval_log.jsonl.
+- `researcher_cap_check: fail` — any researcher exceeded 8. Include the offending researcher IDs and their counts in repair guidance. The synthesizer cannot fix this on its final pass (the calls were already made), so a fail here is informational — flag it in the report's §2 Weakest assumption sub-bullet so the user sees the budget violation, but do NOT trigger a structure re-dispatch on this signal alone. Cap violation = soft regression, not a hard structural failure.
+
+If `retrieval_log.jsonl` is missing or malformed (no parseable JSON lines), set `researcher_cap_check: not_applicable` and do not block on it.
+
 ## What you produce
 
 `structure_verifier.json`:
@@ -127,6 +137,12 @@ For each of the following, classify `pass` / `fail` / `not_applicable`. On `fail
       "structured_list_present": "pass|fail",
       "min_three_entries": "pass|fail",
       "repair_guidance": "<one line>"
+    },
+    "researcher_cap_check": {
+      "verdict": "pass|fail|not_applicable",
+      "per_researcher_counts": {"researcher-1": <int>, "researcher-2": <int>, ...},
+      "violators": ["researcher-N", ...],
+      "repair_guidance": "<one line — soft signal, not a hard structural failure>"
     }
   },
   "overall_repair_guidance": "<2-4 lines summarizing what the synthesizer should fix on the next pass>"
@@ -137,8 +153,8 @@ For each of the following, classify `pass` / `fail` / `not_applicable`. On `fail
 
 ## Decision rule
 
-- `verdict: pass` — every check is `pass` or `not_applicable`.
-- `verdict: fail` — any check is `fail`. The orchestrator (skill) re-dispatches the synthesizer-draft with the `overall_repair_guidance` text.
+- `verdict: pass` — every structural check (§1–§6) is `pass` or `not_applicable`. The `researcher_cap_check` is a soft signal and does NOT factor into the verdict on its own — a cap violation produces a `fail` verdict only when combined with another structural failure.
+- `verdict: fail` — any §1–§6 check is `fail`. The orchestrator (skill) re-dispatches the synthesizer-draft with the `overall_repair_guidance` text.
 
 A fit-verifier `fail` and a structure-verifier `fail` can both fire on the same draft. Each gets one re-dispatch slot per run; the skill orchestrator handles ordering.
 

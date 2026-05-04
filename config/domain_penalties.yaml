@@ -1,0 +1,48 @@
+# Patch VV (2026-05-04) — Per-domain retrieval-time score penalty.
+#
+# Multiplies the final ranking score for a chunk by `penalty` based on the
+# host of its `url` (or `canonical_url`). Default: 1.0 (no penalty).
+# Values < 1.0 push aggregator / listicle / SEO content down the ranking
+# without filtering it out entirely.
+#
+# Patch AA (2026-05-04) handled this prompt-only on the synthesizer side:
+# the system would still RETRIEVE noisy chunks, then teach the synthesizer
+# to discount them. Patch VV moves enforcement to retrieval — noisy chunks
+# rank lower at the candidate stage, so they're less likely to surface at
+# all. Less work for the synthesizer, fewer wasted retrieval slots.
+#
+# Tuning:
+#   1.0   no penalty (default for unlisted domains)
+#   0.7   mild discount (mainstream tech blogs with mixed signal)
+#   0.5   moderate discount (general aggregators, Medium-style content farms)
+#   0.3   strong discount (clear SEO listicle / model-comparison farms)
+#   0.1   near-suppression (link-spam sites; almost never surface them)
+#
+# Add domains AFTER you observe them surfacing in actual research runs.
+# Pre-emptively penalizing untested domains is over-fitting.
+
+penalties:
+  # Generic content platforms with mixed signal — not all bad, but rank lower
+  # than primary sources by default.
+  medium.com: 0.6
+  dev.to: 0.6
+  hackernoon.com: 0.5
+  towardsdatascience.com: 0.6
+  analyticsvidhya.com: 0.5
+
+  # SEO listicle / model-comparison farms — observed surfacing on
+  # "best LLM for X" queries with shallow comparison content.
+  locallyuncensored.com: 0.3
+  promptengineering.org: 0.5
+  promptlayer.com: 0.5
+
+  # Generic AI marketing blogs (low primary-source signal).
+  superannotate.com: 0.4
+  encord.com: 0.4
+  galileo.ai: 0.5
+
+  # Vendor blogs with strong primary signal — INTENTIONALLY no penalty.
+  # Listed here as a comment so future-you doesn't add them by reflex:
+  #   anthropic.com, openai.com, deepmind.google, ai.meta.com,
+  #   huggingface.co, mistral.ai, cohere.com, groq.com,
+  #   research.google, ai.googleblog.com, microsoft.com/research
