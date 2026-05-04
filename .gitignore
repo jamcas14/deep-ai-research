@@ -27,12 +27,24 @@ corpus/
 # Per-research-run scratch dirs — ephemeral
 .claude/scratch/
 
+# Per-machine state (Patch CC: usage snapshots from Stop hook)
+.claude/state/
+
+# Project-scoped settings — per-machine, may contain hooks/permissions
+.claude/settings.local.json
+
 # Eval run traces — keep _history.jsonl, archive everything else
 evals/runs/*/
 !evals/runs/_history.jsonl
 
 # Reports — committable for audit trail; user choice. Keep them.
 # (Reports stay tracked.)
+
+# Daily digests (Patch BB) — terminal-friendly user-facing copy. The corpus
+# version at corpus/digests/ is already gitignored via the corpus/ rule.
+# Use directory-content pattern + negation so .gitkeep stays tracked.
+digests/*
+!digests/.gitkeep
 
 # Build / test artifacts
 build/

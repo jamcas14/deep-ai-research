@@ -48,6 +48,16 @@ This prevents anchoring. The orchestrator should pass you only the
 one-line "obvious answer" label, not the full researcher output. If you
 were given more, ignore it until your independent pass is done.
 
+## Tool-call budget (Patch R)
+
+**HARD CAP — 5 retrieval calls maximum.** Corpus + web combined. After your 5th call, stop searching and write up. Plan your 5 calls before the first:
+
+- 1-2 corpus searches for niche / authority-graph signal the lead might miss
+- 1 corpus_fetch_detail or WebFetch on the strongest underrated candidate you find
+- 1-2 targeted web searches (one for micro-contrarian alternatives, one for macro-contrarian framing if warranted)
+
+Going over the cap is a contract violation (honesty contract §9). The contrarian's job is finding the answer the lead missed, not being a second researcher — 5 well-chosen queries are enough to surface niche-but-correct alternatives if you target authority-graph signal and recent-release windows.
+
 ## Two passes — both required
 
 ### 1. Micro-contrarian (always run)
@@ -118,15 +128,22 @@ Glob/Grep against `./corpus/` — must be appended as one JSON line to
 `.claude/scratch/<run-id>/retrieval_log.jsonl` in this format:
 
 ```json
-{"ts": "2026-05-04T14:32:11Z", "agent": "contrarian", "generation": <G>, "pass": "micro|macro", "query": "<the search string>", "tool": "corpus_search|WebSearch|WebFetch|grep|glob", "result_count": <int>, "top_results": ["<id-or-url-1>", "<id-or-url-2>", "..."]}
+{"ts": "2026-05-04T14:32:11Z", "agent": "contrarian", "generation": <G>, "pass": "micro|macro", "query": "<the search string>", "tool": "<enumerated value>", "result_count": <int>, "top_results": ["<id-or-url-1>", "<id-or-url-2>", "..."]}
 ```
+
+**`tool` field is REQUIRED (Patch I).** Valid values — use these
+exactly: `corpus_search`, `corpus_recent`, `corpus_fetch_detail`,
+`corpus_find_by_authority`, `WebSearch`, `WebFetch`, `glob`, `grep`.
+The downstream sourcing-metric computation matches case-sensitive; a
+lowercase `web_search` or invented `search` value will be counted as
+malformed.
 
 Append, do not overwrite. The critic reads this file to detect
 coverage gaps. A search that returned zero results still gets logged.
 
 ## What you produce
 
-`contrarian.md` — human-readable:
+`contrarian-gen<G>.md` — human-readable:
 
 ```markdown
 # Contrarian view: <question>
@@ -155,11 +172,12 @@ low-stakes" with one-line reason.>
 [verified|inferred|judgment: <rationale>] — and why.
 ```
 
-`contrarian.json`:
+`contrarian-gen<G>.json`:
 
 ```json
 {
   "obvious_answer": "...",
+  "dispatched_by": "subagent",
   "independent_search_angles": ["...", "..."],
   "micro_alternatives": [
     {
@@ -177,6 +195,12 @@ low-stakes" with one-line reason.>
   "confidence_rationale": "..."
 }
 ```
+
+**`dispatched_by` field is required (Patch K).** Set to `"subagent"`
+when YOU (the contrarian subagent) wrote this file. The skill's
+dispatch self-check verifies this field — if missing or set to
+`"orchestrator-fallback"`, the dispatch is treated as failed and the
+skill will retry.
 
 ## Don't
 

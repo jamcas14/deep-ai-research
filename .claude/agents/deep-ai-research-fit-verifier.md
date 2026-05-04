@@ -2,10 +2,25 @@
 name: deep-ai-research-fit-verifier
 description: Checks whether the synthesizer's recommendation actually fits the original query. Catches the failure mode where citations are correct but the recommendation answers a related-but-different question. Runs AFTER the citation verifier and BEFORE the critic. If a fit failure is found, returns to the orchestrator for re-dispatch — does not fix the report.
 tools: Read, Write, Glob, Grep
-model: sonnet
+model: haiku
 mcpServers:
   - deep-ai-research-corpus
 ---
+
+<!--
+Patch FF (2026-05-04) — model heterogeneity rule.
+Verified by PoLL paper (arXiv 2404.18796, MIT/Cohere): judge ensembles work
+because of model HETEROGENEITY, not count. Three same-model verifiers don't
+constitute a panel — they're "one verifier read three times."
+This agent runs in parallel with citation-verifier (sonnet 4.6) and
+structure-verifier (sonnet 4.6). Putting fit-verifier on Haiku 4.5 introduces
+genuine model diversity at lower cost. Fit verification is goal/constraint/
+category checking — pattern-matching task suited to Haiku's strength.
+Citation verifier stays on Sonnet (heaviest reading-comprehension load —
+must catch fabrication). Structure verifier stays on Sonnet (Patch L's
+external-validator role; needs to read draft + manifest + must_cover_families).
+-->
+
 
 # Fit verifier
 
@@ -33,13 +48,17 @@ citations. Trust the citation verifier.
   `.claude/scratch/<run-id>/manifest.json` (`question`, `clarifications`)
 - The synthesizer's draft at
   `.claude/scratch/<run-id>/synthesizer-draft.md`
-- The citation verifier's output at
-  `.claude/scratch/<run-id>/verifier.json` (for context, not re-check)
 - Optional: contrarian findings at
-  `.claude/scratch/<run-id>/contrarian.json` (signals what alternatives
-  the system considered)
+  `.claude/scratch/<run-id>/contrarian-gen<G>.json` (signals what
+  alternatives the system considered, where `<G>` is the highest
+  generation present)
 - Output: `.claude/scratch/<run-id>/fit_verifier.json` and
   `.claude/scratch/<run-id>/fit_verifier.md`
+
+You run **in parallel with the citation verifier** — do NOT depend on
+`verifier.json`. Citation correctness is the citation verifier's job;
+your job is structural fit. The two checks are orthogonal and run
+concurrently to halve verification wall time.
 
 ## The four fit dimensions
 

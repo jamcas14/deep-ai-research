@@ -1,0 +1,35 @@
+# Anthropic plan tier — used by the synthesizer to compute the Patch N
+# plan-usage metric in §2 of every research report.
+#
+# This is a budget approximation, not actual remaining-quota. Anthropic
+# doesn't expose remaining 5h/7d quota via the API, so we estimate
+# percentage of the plan's monthly budget. For more accurate 5h/7d
+# tracking, the skill can call `claude /usage` via Bash before and
+# after each run and write the snapshots to manifest.json under
+# `usage_snapshot_start` / `usage_snapshot_end`.
+
+# Your current plan tier
+tier: max-200  # one of: max-200, max-100, team, api-only
+
+# Approximate token-equivalent of the plan's monthly budget.
+# These are rough estimates based on Anthropic's $/token pricing and
+# the rolling 5h + weekly cap design. Used purely for the Patch N
+# percentage display; not load-bearing for any decision logic.
+monthly_budget_tokens:
+  max-200: 50_000_000     # ~$200/mo Max ≈ 50M tokens at Sonnet 4.6 blended pricing
+  max-100: 25_000_000     # ~$100/mo Max ≈ 25M tokens
+  team: 100_000_000       # team plans vary; placeholder
+  api-only: 0             # api-only users pay per-token; no monthly budget
+
+# Optional: explicit 5h and 7d window estimates (token-equivalent).
+# If set, the synthesizer can render finer-grained percentages when
+# the skill captures usage_snapshot_start/end.
+window_5h_tokens: ~          # leave blank to use raw monthly% only
+window_7d_tokens: ~
+
+# Notes:
+# - To enable Tier-2 (actual 5h/7d telemetry), add a Stop hook that
+#   captures the user's /usage output and stores per-run deltas. See
+#   PLAN.md "Operational concerns" → "Plan usage tracking" for setup.
+# - If you don't want the plan-usage sub-bullet rendered at all, set
+#   tier: disabled and the synthesizer will skip it.

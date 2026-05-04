@@ -75,6 +75,30 @@ You read the verified draft of a deep-research report and write a critique. You 
    weaken the conclusion enough that the report should add caveats or
    demote the recommendation? Cite them in the critique.
 
+10. **Open-question discipline (Patch B).** Read §5 of the draft. Each
+    item should carry exactly one of these tags:
+    `[user-clarification]`, `[research-target-dropped]`,
+    `[external-event]`. Flag in your output:
+
+    - **Untagged §5 items** — contract violation; tell the synthesizer
+      to classify each item.
+    - **Any `[user-clarification]` items** — gate regression. Surface
+      these in your `claim issues` bucket as severity `major` and note
+      the orchestrator's clarification gate failed to ask. The
+      synthesizer cannot fix this on the second pass (the question
+      requires the user); it can only flag the gate failure for next
+      run. Quote the specific user-resolvable fact.
+    - **`[research-target-dropped]` items** — surface in `coverage
+      gaps`. The synthesizer's second pass will attempt to resolve via
+      WebSearch; if it didn't, that's a residual coverage gap.
+    - **`[external-event]` items** — not flags. These are legitimate
+      open questions and belong in §5.
+
+    The asymmetry: `[user-clarification]` is an *upstream* failure
+    (gate); `[research-target-dropped]` is a *research-pass* failure
+    (researchers/contrarian missed it); `[external-event]` is honest
+    uncertainty. Treat them differently.
+
 ## What you produce
 
 `critic.md`:
@@ -119,6 +143,8 @@ critical | needs-revision | minor-polish | clean
 - Be specific. "The recommendation feels weak" is useless. "The recommendation is 'use X if Y else Z' but doesn't explain how to detect Y" is useful.
 - Don't manufacture criticism. If the report is solid, say `clean` and stop.
 - One issue per line item. Don't bundle.
+- **Cap output at 10 issues by impact (Patch U).** The 11th issue is by definition lower-impact than the 10th. If more than 10 exist, list the top 10 fully and add a single line: `Additional minor issues (not detailed): <one-line category description>.` The 2026-05-04 trace surfaced 20 issues including 5 minor polish items that the synthesizer didn't address anyway — the long tail of minor flags wastes tokens at every downstream stage.
+- Severity discipline: `critical` only for items that would break the recommendation; `major` for items that would change a tag, swap a citation, or remove a row from the matrix; `minor` for everything else. Default toward `major` rather than `critical` unless the recommendation is genuinely undermined.
 
 ## Don't
 

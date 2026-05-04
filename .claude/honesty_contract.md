@@ -85,6 +85,88 @@ research, not a guess wrapped in confident language. But cap it:
 Do not infinitely loop. Three passes, then commit to the honest answer
 or hand the question back to the user.
 
+## 8. Inferred caller intent is not user input
+
+When the orchestrator (or any subagent) decides whether to skip the
+clarification gate, the only valid grounds are **statements the user
+actually made**. You may not skip a clarification because:
+
+- The caller's intent notes claim the user "is technically literate" or
+  "is self-hosting" or "wants X" — those are inferences from a wrapper,
+  not statements from the user
+- The query *implies* a constraint by word choice (e.g. "policy-crossing"
+  is read as "self-hosting required") — implication is not statement
+- You think the recommendation will be robust to the unknown — if it
+  *would change* the top recommendation, the unknown is gate-relevant
+  regardless of how robust you feel
+
+Skip rationale recorded in `manifest.json` must quote the specific
+user-provided text that resolved the unknown. If you cannot quote, you
+cannot skip. The orchestrator's `clarification_skipped_reason` field
+must satisfy this — otherwise the run is in violation of this contract.
+
+A clarification that surfaces in the final report's §5 Open Questions
+as a `[user-clarification]` item retroactively proves the gate failed:
+the system spent compute on a research run pointed at the wrong target.
+Treat that pattern as a regression signal in evals.
+
+## 9. Bounded coverage (breadth-not-depth)
+
+For recommendation queries, completeness of the option *family* set is
+more load-bearing than wall-time or token-budget efficiency — but
+"longer" is bounded, not unbounded. The user's two-part guidance
+(2026-05-04):
+
+1. *"Forgetting an option is detrimental; picking the wrong best one
+   is recoverable."*
+2. *"1h 17 minutes — like what the fuck. ~2-2.4M tokens. My entire 5h
+   context went from 30% to 100%. That's not normal. Optimize it."*
+
+These reconcile as: **survey every option family (breadth) at moderate
+depth per family (one strong representative per family is sufficient);
+don't redundantly triangulate the same space across 8 researchers.**
+
+Concretely:
+
+- **Breadth is mandatory**: every relevant option family (finetune
+  lineages, alternate base models, hosted-API variants, smaller-model
+  + stronger-prompt paths, multi-model architectures) appears as a
+  row in the comparison matrix. Missing a family is a contract
+  violation.
+- **Depth is bounded**: each researcher caps at 8 retrieval calls;
+  the contrarian at 5; the citation verifier samples 12 most-load-
+  bearing citations (not all). The triangulation rule (≥2 sources
+  for `[verified]`) operates within these caps — pick which claims
+  to triangulate.
+- **Sub-question count discipline**: 3-4 for simple queries; 4-5 for
+  multi-axis recommendation queries; 5-6 only for genuine triple-axis
+  complexity. **Defaulting to 7-8 sub-questions is over-decomposition
+  and produces redundant retrieval, not better coverage.**
+- **Token budget**: ~600-800K target for typical recommendation
+  queries; ~1M ceiling for triple-axis cases; **anything ≥1.2M is a
+  regression** the run must self-flag.
+- **Wall-time soft target**: ~25 min typical; ~40 min absolute ceiling.
+  Beyond that, the run stopped being useful — finalize with what's
+  gathered, mark `finish_reason: "wall_time_cap"`.
+- **Synthesizer model**: Sonnet 4.6 default on BOTH passes. Opus 4.7
+  is reserved for re-dispatch loops (the synthesizer earns Opus only
+  by failing the first pass).
+- **5h Max window discipline**: a single research run consuming >30%
+  of the user's rolling 5h plan window is a regression. The user has
+  other Claude Code work to do.
+- **§1 Conclusion runner-ups**: still mandatory (2-4 alternatives with
+  one-line dismissal reasons). Independent of the bounded-coverage
+  rule.
+
+The pattern this section prevents: 8 researchers × 30 retrieval calls
+each, all surveying overlapping slices of the same option space, then
+the synthesizer running on Opus for 17 minutes integrating them. That
+is *not* coverage-first — it's redundancy dressed as thoroughness.
+
+This corollary is a calibration on §6 ("I don't know"): "I don't know"
+is honest; "I forgot to check" is a contract violation; "I checked
+the same thing 8 times" is also a contract violation.
+
 ---
 
 ## Contract enforcement

@@ -357,3 +357,92 @@ cases:
         these sections mandatory. Cheap structural check; runs on every
         recommendation-class case.
     blocked_until: full_loop_eval_harness
+
+  # ============ Expansion batch 4 (2026-05-04, Patch EE) ============
+  # New cases derived from the validation findings of the two competing
+  # research reports (claude.ai's critique vs the system's self-critique,
+  # 14-loop independent validation). These guard against the validation-
+  # discovered failure modes:
+  #   - Discovery vs synthesis split (Report 2's load-bearing reframe)
+  #   - Entity-version classification (foreshadows Patch GG registry router)
+  #   - Mini-contrarian on the recommendation (Patch Z structural gate)
+
+  - id: discovery_problem_proxy
+    category: recency
+    query: |
+      What's new with DeepSeek?
+    expected:
+      must_mention:
+        - any of: ["DeepSeek v4", "DeepSeek V4", "DeepSeek-V4"]
+      recency:
+        within_days: 60
+      min_hits: 3
+      reasoning: |
+        Per Patch BB (daily authority-feed digest) reframe: when the corpus
+        has captured a DeepSeek v4 newsletter, the recency pass MUST
+        surface it on a vague "what's new with X" query — even if the
+        user doesn't know v4 dropped (the discovery failure mode that
+        motivated the whole project). This is a retrieval-layer assertion;
+        it tests that the recency pass + corpus_recent does the right
+        thing when the corpus is correctly populated. The DIGEST product
+        (Patch BB) is the proactive complement; this case verifies the
+        reactive path also works.
+    blocked_until: step_3_tier1_ingestion
+    notes: |
+      Runs cleanly on the v1 retrieval harness (no full-loop dispatch
+      needed). Differs from recency_deepseek_v4 in that the query is
+      INTENTIONALLY VAGUE — testing whether the pipeline can surface
+      v4 without the user already knowing to ask about it.
+
+  - id: entity_version_query_correctly_classified
+    category: report_format
+    query: |
+      What's the latest DeepSeek model?
+    expected:
+      manifest_classification_must_contain:
+        - "entity_version"
+      manifest_must_have_field:
+        - "entity_version_resolution"
+      reasoning: |
+        Patch GG (Wave 3) introduces an entity_version query subtype.
+        The skill's Stage 1 classifier should detect "what's the latest"
+        / "what version" / "is X out yet" + named entity patterns and
+        classify as entity_version. Stage 2 then triangulates across
+        registry APIs (HF Hub, OpenRouter, Artificial Analysis). This
+        case asserts the classification fires and the registry triangu-
+        lation populates manifest.json.entity_version_resolution. Until
+        Patch GG ships, this case is blocked.
+    blocked_until: patch_gg_entity_version_router
+    notes: |
+      Counter-test: a synthesis query ("how does grouped-query attention
+      work") MUST NOT classify as entity_version. The harness can run
+      both queries and check the classification differs.
+
+  - id: mini_contrarian_surfaces_alternative
+    category: counter_position
+    query: |
+      Best LLM model for a personal companion that adheres to a unique
+      personality with extensive memory of past events?
+    expected:
+      report_must_contain_section:
+        - "Weakest assumption:"
+      report_section_must_contain:
+        section: "Weakest assumption"
+        any_of:
+          - "alternative"
+          - "instead"
+          - "however"
+          - "may not"
+          - "untested"
+          - "unproven"
+        reasoning_min_words: 25
+      reasoning: |
+        Patch Z (mini-contrarian on the recommendation, synthesizer
+        second-pass step 6.5): before final write, the synthesizer
+        red-teams its own draft recommendation and surfaces 2-3 reasons
+        AGAINST. If those reasons are real but don't change the recom-
+        mendation, they MUST appear in §2 Weakest assumption — otherwise
+        the report converged on the recommendation without seriously
+        challenging it. The rubric checks for hedge-language plus
+        substantive content (≥25 words in the section).
+    blocked_until: full_loop_eval_harness

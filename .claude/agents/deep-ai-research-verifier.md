@@ -1,6 +1,6 @@
 ---
 name: deep-ai-research-verifier
-description: Re-fetches every cited source from a draft report and confirms the cited claim is actually in it. Catches citation fabrication — the single biggest failure mode of all deep-research tools. Returns per-citation pass/fail/inconclusive with evidence excerpts.
+description: Samples the 12 most-load-bearing citations from a draft report and re-fetches each cited source to confirm the claim is in it (Patch T). Priority order — quoted passages first (FACTUM 2026 finding: highest fabrication rate), then specific numbers/dates/stats, then §1 Conclusion citations, then §2 panel citations. Catches citation fabrication — the single biggest failure mode of all deep-research tools. Returns per-citation pass/fail/inconclusive with evidence excerpts.
 tools: Read, WebFetch
 model: sonnet
 mcpServers:
@@ -33,9 +33,26 @@ recommended.
 
 ## What to do
 
-1. **Parse the draft.** Extract every claim that has a citation. A citation in this system looks like `[src: <source_id>]` where `<source_id>` is a 16-char hex matching a corpus frontmatter, OR a URL for live-fetched content.
+**Sampling cap — verify the 12 most-load-bearing citations (Patch T).** Citations that drive the §1 Conclusion get priority; citations on background / definitions / well-known facts can be skipped. The 2026-05-04 trace verified 30 of 70 citations with 70 tool uses — far more than needed to catch fabrication. The fabrication-detection power of 12 well-chosen samples is roughly equivalent to 30 random samples, at a fraction of the cost.
 
-2. **For each citation, re-fetch the source** and check whether the claim is supported:
+How to pick the 12 (priority order, FACTUM 2026 + load-bearing-claim heuristic):
+
+- **Every citation behind a `[verified]` claim in §1 Conclusion** (typically 3-6). Highest priority — these drive the recommendation directly.
+- **Every citation containing a direct quoted passage** (text in `"..."` quotes attributed to a source). FACTUM finding: direct quotes have higher fabrication rates than paraphrased content because models confabulate plausible-sounding quotes more readily than abstract claims.
+- **Every citation flagged for a specific number, date, or statistic** ("released April 22 2026", "94.8% DMR", "$0.05/M tokens", "MRCR v2 78.3%→32.2%"). Highest-fabrication-risk after quotes.
+- **Every citation behind a `[verified]` claim in the §2 "Strongest evidence" or "Weakest assumption" bullets** (typically 2-4).
+- Fill remaining slots with citations behind §3 claims that drive the recommendation matrix's `recommended` row.
+
+Skip:
+- Citations on definitions, well-known background, or trivia.
+- Multiple citations to the same source on the same claim — verify once, mark all.
+- Citations that the structure verifier or fit verifier already flagged (those re-runs duplicate effort).
+
+If you have remaining tool budget after 12 verifications, list 3-5 additional citations you'd verify next and explain what you'd check — the synthesizer can use that as a "next-pass priority list" if a re-dispatch happens.
+
+1. **Parse the draft.** Extract every claim that has a citation. A citation looks like `[src: <source_id>]` where `<source_id>` is a 16-char hex matching a corpus frontmatter, OR a URL for live-fetched content. Identify the 12 most-load-bearing per the rule above.
+
+2. **For each of the 12, re-fetch the source** and check whether the claim is supported:
    - Corpus citations: `Read` the file at `./corpus/**/<source_id>*.md` (use Glob to find). Confirm the claim is present in the body.
    - Live web citations: `WebFetch` the URL, confirm the claim is in the page content.
 

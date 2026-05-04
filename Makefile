@@ -1,6 +1,6 @@
 .PHONY: help install install-embed install-skill install-timers register-user-mcp \
         verify-sqlite ingest ingest-dry ainews embed poll-authorities tag-engagements \
-        promote-arxiv eval lint test clean backup
+        promote-arxiv digest digest-dry eval eval-fullloop baseline lint test clean backup
 
 help:
 	@echo "deep-ai-research — common targets"
@@ -21,9 +21,13 @@ help:
 	@echo "    make poll-authorities   poll GitHub stars for authorities.yaml entries"
 	@echo "    make tag-engagements    detect 'author' engagements from publication/authors"
 	@echo "    make promote-arxiv      promote cross-mentioned arXiv papers (full-text)"
+	@echo "    make digest             run daily authority-feed digest (Patch BB)"
+	@echo "    make digest-dry         dry-run digest (no files written)"
 	@echo ""
 	@echo "  Testing / quality:"
-	@echo "    make eval               run evals/cases.yaml"
+	@echo "    make eval               run evals/cases.yaml (v1 retrieval-layer)"
+	@echo "    make eval-fullloop      run v2 behavioral-trace harness over scratch dirs (Patch EE)"
+	@echo "    make baseline           run single-Sonnet baseline experiment (Patch DD; needs ANTHROPIC_API_KEY)"
 	@echo "    make lint               ruff + mypy"
 	@echo "    make test               pytest"
 	@echo ""
@@ -57,8 +61,20 @@ tag-engagements:
 promote-arxiv:
 	uv run python -m ingest.promote_arxiv -v
 
+digest:
+	uv run python -m ingest.digest -v
+
+digest-dry:
+	uv run python -m ingest.digest --dry-run -v
+
 eval:
 	uv run python -m evals.run_all
+
+eval-fullloop:
+	uv run python -m evals.run_full_loop -v
+
+baseline:
+	uv run python -m evals.baseline_single_sonnet -v
 
 verify-sqlite:
 	bash ops/verify-sqlite.sh

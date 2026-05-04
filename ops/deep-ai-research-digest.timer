@@ -1,0 +1,14 @@
+[Unit]
+Description=deep-ai-research — daily authority-feed digest (Patch BB)
+Documentation=https://github.com/jamcas14/deep-ai-research
+
+[Timer]
+# Daily at 08:00 local time. Catches whatever landed in the corpus over the
+# previous 24 hours; the user reads it as their morning "what happened in AI"
+# discovery digest.
+OnCalendar=*-*-* 08:00:00
+# Catch missed runs after the machine wakes from sleep / shutdown.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

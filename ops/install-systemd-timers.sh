@@ -14,7 +14,8 @@ for unit in deep-ai-research-ingest.service deep-ai-research-ingest.timer \
            deep-ai-research-embed.service deep-ai-research-embed.timer \
            deep-ai-research-poll-authorities.service deep-ai-research-poll-authorities.timer \
            deep-ai-research-promote-arxiv.service deep-ai-research-promote-arxiv.timer \
-           deep-ai-research-tag-engagements.service deep-ai-research-tag-engagements.timer ; do
+           deep-ai-research-tag-engagements.service deep-ai-research-tag-engagements.timer \
+           deep-ai-research-digest.service deep-ai-research-digest.timer ; do
   cp "$SCRIPT_DIR/$unit" "$UNITS_DIR/$unit"
 done
 
@@ -24,7 +25,8 @@ systemctl --user daemon-reload
 echo "Enabling + starting timers ..."
 for t in deep-ai-research-ingest.timer deep-ai-research-embed.timer \
          deep-ai-research-poll-authorities.timer deep-ai-research-promote-arxiv.timer \
-         deep-ai-research-tag-engagements.timer ; do
+         deep-ai-research-tag-engagements.timer \
+         deep-ai-research-digest.timer ; do
   systemctl --user enable --now "$t"
 done
 

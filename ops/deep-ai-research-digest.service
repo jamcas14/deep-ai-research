@@ -1,0 +1,22 @@
+[Unit]
+Description=deep-ai-research — daily authority-feed digest run (Patch BB)
+Documentation=https://github.com/jamcas14/deep-ai-research
+After=network-online.target
+# Don't fight the ingest service; let it land its 8am window first.
+After=deep-ai-research-ingest.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/projects/deep-ai-research
+ExecStart=%h/.local/bin/uv run python -m ingest.digest -v
+StandardOutput=journal
+StandardError=journal
+
+CPUWeight=50
+IOWeight=50
+Nice=10
+
+RemainAfterExit=no
+
+[Install]
+WantedBy=default.target
