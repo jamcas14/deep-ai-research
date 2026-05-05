@@ -907,3 +907,106 @@ Empirical: regex-only mode hit rate on first 1500 newsletters ≈ 12.5% (200 sam
 - EEE — Daily digest Haiku per-bucket prose summaries
 - FFF — Source-discovery automation (monthly query for unsourced mentioned-entities)
 - Future: Qwen3-Reranker-0.6B integration with custom inference code (15% MTEB-R lift over bge)
+
+---
+
+## 2026-05-05 — Wave 4: Patches DDD, EEE, FFF, BBB, AAA (skeleton)
+
+**Patch DDD — MCP filter additions.** Three additions to `corpus_server/server.py`:
+- `entity` filter on `corpus_search` (case-insensitive substring match against
+  `mentioned_entities` ∪ `mentioned_authorities`). Live test: `entity='karpathy'`
+  on a generic AI query returned 1 highly-relevant chunk; `count(entity='karpathy')`
+  returned 18 total.
+- New `corpus_count(topic, since, until, source_types, entity)` MCP tool. Returns
+  just a count — density-monitoring tool, cheaper than search since it skips
+  ranking. Cached via Patch YY's TTL cache.
+- New `corpus_related(source_id, top_n)` MCP tool. Cluster navigation via vector
+  similarity over the source's body. Live test: top hit on a Qwen3-Embedding
+  source returned 3 related Nathan Lambert / Interconnects posts.
+
+**Patch EEE — Daily digest Haiku per-bucket summaries.** New `--summarize` flag on
+`python -m ingest.digest`. When set, each bucket gets a 2-3 sentence prose preamble
+via `claude -p --tools "" --model claude-haiku-4-5`. Off by default. Cost: ~$0.005
+per bucket against Max plan rate limits. Live test on the 168h window with 3
+non-empty buckets took ~70s wall-clock (3 sequential Haiku calls). No API key
+required.
+
+**Patch FFF — Source-discovery automation.** New `ingest/source_discovery.py`. Walks
+corpus, tallies `mentioned_authorities` + `mentioned_entities` over the window,
+filters out names already in `authorities.yaml` and publications already in
+`sources.yaml`, surfaces top-N candidates with suggested actions. Output:
+`digests/source_candidates_<date>.md`. Smoke-tested on 365d window: surfaced
+arxiv ID candidates (cs.AI, cs.CL, paper IDs) — once Patch NN's `--use-llm`
+backfill runs, entity surfacing will broaden to model names + lab names.
+
+**Patch BBB — Eval expansion to ≥30 cases.** Added 8 new cases to
+`evals/cases.yaml`, all targeting Wave 1-3 patches:
+- `mention_detection_populates_authorities` (Patch NN)
+- `mentioned_with_link_engagement_records` (Patch NN/tag_engagements)
+- `cross_run_memory_finds_personality_query` (Patch ZZ)
+- `bluesky_source_type_in_corpus` (Patch WW; blocked_until: bluesky_first_run)
+- `github_release_in_corpus` (Patch RR; blocked_until: github_releases_first_run)
+- `domain_penalty_demotes_aggregator` (Patch VV)
+- `corpus_count_returns_positive` (Patch DDD)
+- `entity_filter_narrows_results` (Patch DDD)
+
+`evals/run_all.py` extended with 6 new behavioral assertion functions:
+`assert_mentioned_authorities_populated`, `assert_domain_penalty_applied`,
+`assert_engagements_kind_present`, `assert_cross_run_memory_finds`,
+`assert_source_types_present`. Pass-through `filters` field on cases enables
+filter-specific assertions. Total cases: 32 (29 passing, 3 blocked, 0 failing).
+
+**Patch AAA — Embedding migration skeleton.** Three pieces:
+- New `config/embedding.yaml` with `model`, `dim`, `device` fields. Default
+  stays at arctic-embed-s 384-dim — no behavior change without explicit
+  migration.
+- `ingest/_index.py` `EMBED_DIM` now reads from config (fallback 384).
+- `corpus_server/server.py` `_ensure_model()` uses config-driven model id +
+  device (auto-detects CUDA when `device: auto`).
+- New `ingest/migrate_embedding.py` — explicit migration command. Backs up
+  the sqlite DB with timestamp, drops+recreates the vec0 table at the new
+  dim, re-embeds every chunk via the target model, updates pin_versions.
+  Requires `--confirm` flag. Recovery-instruction-printing on failure.
+  Dry-run smoke test confirms current state (arctic-embed-s 384) and
+  target plan (Qwen3-Embedding-0.6B 1024) without touching anything.
+
+The migration is gated by `--confirm` and not run yet — it's a 2-4h CPU
+operation (or 30-45min GPU if torch+CUDA installed) that the user should
+schedule when they can monitor it. The skeleton makes the swap straightforward
+when they're ready: `uv run python -m ingest.migrate_embedding --to
+Qwen/Qwen3-Embedding-0.6B --dim 1024 --confirm`.
+
+Contextual chunking (Haiku-generated 50-100 token prefix per chunk) deferred
+to a follow-on patch — best batched with the embedding migration so the
+re-embed pass uses the contextually-augmented chunks.
+
+**Verification:** All 29 unblocked eval cases pass. mypy clean on new files.
+Migration dry-run produces the right plan output without side effects.
+
+**Surprises:**
+- The cross-run memory test (Patch BBB case) passes with sim=0.911 against
+  the prior personality+memory query, confirming Patch ZZ's calibration.
+- Source discovery's regex-only output is dominated by arxiv IDs because
+  the open-set entity extraction needs the LLM path. Until `--use-llm`
+  backfill runs, FFF's value is the authority-side (which is properly
+  empty since the regex pre-filter only matches names already in
+  authorities.yaml). LLM backfill turns FFF into a useful authority-graph
+  expansion tool.
+- The migration script's "config write must take effect" check (reload
+  `ingest._index` after writing config, assert EMBED_DIM matches) caught
+  one cycle of testing where the config wasn't picked up. That guard is
+  important because the alternative is a silently-corrupted vec0 table.
+
+**Wave 4 done. Where we are:**
+- Wave 1 ✓: NN, JJ, UU, OO
+- Wave 2 ✓: PP, SS, RR, VV, II, LL, QQ
+- Wave 3 ✓: WW, XX, YY, ZZ, TT (skeleton)
+- Wave 4 ✓: DDD, EEE, FFF, BBB, AAA (skeleton — migration not run)
+
+**What's left for follow-on:**
+- Run AAA's actual migration when the user has 2-4h to monitor.
+- Run NN's `--use-llm` backfill when the user wants Haiku-disambiguated mentions.
+- Enable TT (reranker) by `uv sync --extra reranker` + flipping `enable: true`.
+- CCC (DSPy/GEPA optimization) — depends on stable eval set. With BBB's 32
+  cases shipped, this is now unblocked but is a substantial separate workstream.
+- Qwen3-Reranker-0.6B custom inference path (15% MTEB-R lift over bge).

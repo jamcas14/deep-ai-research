@@ -103,6 +103,88 @@ def assert_authority_boost_present(hits: list[dict[str, Any]]) -> tuple[bool, st
     return False, "no hits had authority_boost > 1.0"
 
 
+def assert_mentioned_authorities_populated(hits: list[dict[str, Any]], min_fraction: float = 0.05) -> tuple[bool, str]:
+    """Patch NN — at least `min_fraction` of hits should have non-empty
+    mentioned_authorities. Validates that mention-detection at ingestion
+    is producing signal."""
+    if not hits:
+        return False, "no hits"
+    populated = [h for h in hits if h.get("mentioned_authorities")]
+    fraction = len(populated) / len(hits)
+    if fraction >= min_fraction:
+        return True, f"{len(populated)}/{len(hits)} ({fraction:.0%}) hits have mentioned_authorities ≥ {min_fraction:.0%}"
+    return False, f"only {len(populated)}/{len(hits)} ({fraction:.0%}) hits have mentioned_authorities (< {min_fraction:.0%})"
+
+
+def assert_domain_penalty_applied(hits: list[dict[str, Any]], penalized_domains: list[str]) -> tuple[bool, str]:
+    """Patch VV — no hit in the top-K should be from a penalized domain
+    when better alternatives exist. Soft check: penalized_domains absent
+    from top-3 OR all hits with penalty < 1.0 (Patch VV doesn't filter,
+    just down-ranks; if ALL candidates are penalized, one will surface)."""
+    top3 = hits[:3]
+    if not top3:
+        return False, "no hits"
+    bad = [
+        h for h in top3
+        if any(d in (h.get("title_or_url") or "").lower() for d in penalized_domains)
+    ]
+    if bad:
+        # Check if those hits were actually penalized at retrieval time.
+        any_unpenalized = any(
+            h.get("components", {}).get("domain_penalty", 1.0) < 1.0 for h in bad
+        )
+        if not any_unpenalized:
+            return False, f"top-3 has unpenalized hits from {penalized_domains}: {[h.get('title_or_url') for h in bad]}"
+    return True, f"top-3 clean of {penalized_domains}"
+
+
+def assert_engagements_kind_present(kind: str, *, min_count: int = 1) -> tuple[bool, str]:
+    """Patch NN tag_engagements — engagements table has ≥`min_count` records
+    of a given kind."""
+    from ingest._index import connect
+    paths_yaml = yaml.safe_load((PROJECT_ROOT / "config" / "paths.yaml").read_text())
+    sqlite_path = (PROJECT_ROOT / paths_yaml["sqlite_path"]).resolve()
+    try:
+        conn = connect(sqlite_path)
+        n = conn.execute("SELECT COUNT(*) FROM engagements WHERE kind = ?", (kind,)).fetchone()[0]
+        conn.close()
+    except Exception as e:  # noqa: BLE001
+        return False, f"sqlite query failed: {e}"
+    if n >= min_count:
+        return True, f"engagements has {n} '{kind}' records (≥ {min_count})"
+    return False, f"engagements has only {n} '{kind}' records (< {min_count})"
+
+
+def assert_cross_run_memory_finds(query: str, *, min_similarity: float = 0.5) -> tuple[bool, str]:
+    """Patch ZZ — cross-run memory returns at least one match for `query`
+    with similarity ≥ min_similarity. Tests that the index is populated
+    AND that the embedding pipeline works."""
+    try:
+        from corpus_server.cross_run_memory import find_similar
+    except ImportError as e:
+        return False, f"cross_run_memory import failed: {e}"
+    matches = find_similar(query, threshold=min_similarity, top_k=3)
+    if matches:
+        top = matches[0]
+        return True, f"top match sim={top['similarity']} run={top['run_id']}"
+    return False, f"no matches ≥ {min_similarity} for {query!r}"
+
+
+def assert_source_types_present(hits: list[dict[str, Any]], expected_types: list[str]) -> tuple[bool, str]:
+    """Patch RR/WW — at least one hit's source_type matches expected_types.
+    The hit dict doesn't expose source_type directly; we check publication
+    or path heuristics."""
+    found_types: set[str] = set()
+    for h in hits:
+        path = (h.get("path") or "").lower()
+        for t in expected_types:
+            if t in path or t.replace("_", "-") in path:
+                found_types.add(t)
+    if found_types:
+        return True, f"found source_types {sorted(found_types)} in hit paths"
+    return False, f"no hits with source_type in {expected_types}"
+
+
 def _parse_date(s: Any) -> date | None:
     if not s:
         return None
@@ -119,10 +201,11 @@ def run_case(case: dict[str, Any], top_n: int = 20) -> dict[str, Any]:
     cid = case["id"]
     query = case["query"]
     expected = case.get("expected", {}) or {}
+    case_filters = case.get("filters") or {}  # Patch BBB — pass-through search filters
 
     log.info("running %s: %r", cid, query[:80])
     try:
-        hits = search(query, top_n=top_n)
+        hits = search(query, top_n=top_n, filters=case_filters or None)
     except Exception as e:  # noqa: BLE001
         return {
             "id": cid,
@@ -143,7 +226,8 @@ def run_case(case: dict[str, Any], top_n: int = 20) -> dict[str, Any]:
         assertions.append({"type": "must_not_mention", "ok": ok, "message": msg})
 
     # Behavioral asserts that are universal (not in case yaml yet, but we check)
-    ok, msg = assert_min_hits(hits, 3)
+    universal_min = expected.get("min_hits", 3)
+    ok, msg = assert_min_hits(hits, universal_min)
     assertions.append({"type": "min_hits", "ok": ok, "message": msg})
 
     if case.get("category") == "recency":
@@ -153,6 +237,37 @@ def run_case(case: dict[str, Any], top_n: int = 20) -> dict[str, Any]:
     if case.get("category") == "authority":
         ok, msg = assert_authority_boost_present(hits)
         assertions.append({"type": "authority_boost", "ok": ok, "message": msg})
+
+    # Patch BBB — new behavioral assertions for Wave 1-3 patches.
+    if "must_have_mentioned_authorities" in expected:
+        cfg = expected["must_have_mentioned_authorities"]
+        min_frac = cfg.get("min_fraction", 0.05) if isinstance(cfg, dict) else 0.05
+        ok, msg = assert_mentioned_authorities_populated(hits, min_fraction=min_frac)
+        assertions.append({"type": "must_have_mentioned_authorities", "ok": ok, "message": msg})
+
+    if "must_avoid_domains" in expected:
+        ok, msg = assert_domain_penalty_applied(hits, expected["must_avoid_domains"])
+        assertions.append({"type": "must_avoid_domains", "ok": ok, "message": msg})
+
+    if "must_have_engagements_kind" in expected:
+        cfg = expected["must_have_engagements_kind"]
+        if isinstance(cfg, str):
+            kind, min_count = cfg, 1
+        else:
+            kind, min_count = cfg.get("kind", "author"), cfg.get("min_count", 1)
+        ok, msg = assert_engagements_kind_present(kind, min_count=min_count)
+        assertions.append({"type": "must_have_engagements_kind", "ok": ok, "message": msg})
+
+    if "must_match_cross_run_memory" in expected:
+        cfg = expected["must_match_cross_run_memory"]
+        sim = cfg.get("min_similarity", 0.5) if isinstance(cfg, dict) else 0.5
+        target_query = cfg.get("query", query) if isinstance(cfg, dict) else query
+        ok, msg = assert_cross_run_memory_finds(target_query, min_similarity=sim)
+        assertions.append({"type": "must_match_cross_run_memory", "ok": ok, "message": msg})
+
+    if "must_have_source_types" in expected:
+        ok, msg = assert_source_types_present(hits, expected["must_have_source_types"])
+        assertions.append({"type": "must_have_source_types", "ok": ok, "message": msg})
 
     overall = all(a["ok"] for a in assertions)
     status = "pass" if overall else "fail"

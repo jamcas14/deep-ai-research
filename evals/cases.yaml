@@ -488,3 +488,133 @@ cases:
         monitoring_routes_to_digest above — the two together prove the
         gate works in both directions.
     blocked_until: full_loop_eval_harness
+
+  # ---------- Wave 4 / Patch BBB additions (2026-05-05) ----------
+  # These cases exercise Wave 1-3 patches via retrieval-layer assertions
+  # so they pass on `python -m evals.run_all` without needing the full-loop
+  # harness.
+
+  - id: mention_detection_populates_authorities
+    category: authority
+    query: |
+      Karpathy nanoGPT GPT
+    expected:
+      must_have_mentioned_authorities:
+        min_fraction: 0.05
+      reasoning: |
+        Patch NN — at least 5% of hits on a Karpathy-related query should
+        have non-empty mentioned_authorities frontmatter (populated by
+        ingest.mention_detect at write time). The regex-only backfill
+        already produced 110+ tagged chunks; once `--use-llm` runs the
+        fraction will rise. This case guards the field-population
+        contract without a hard threshold that would break on smaller
+        corpora.
+
+  - id: mentioned_with_link_engagement_records
+    category: authority
+    query: |
+      authority graph mention detection
+    expected:
+      must_have_engagements_kind:
+        kind: "mentioned_with_link"
+        min_count: 50
+      reasoning: |
+        Patch NN/tag_engagements — extending tag_engagements to write
+        `kind='mentioned_with_link'` records from frontmatter
+        `mentioned_authorities` is what actually drives the 4× retrieval
+        boost on third-party content. The backfill produced 134 records;
+        this case asserts ≥50 to leave headroom for future authority-yaml
+        edits while still failing if the wiring breaks.
+
+  - id: cross_run_memory_finds_personality_query
+    category: cross_run_memory
+    query: |
+      best LLM model with unique personality and memory
+    expected:
+      must_match_cross_run_memory:
+        min_similarity: 0.85
+        query: "best LLM model with unique personality and memory"
+      reasoning: |
+        Patch ZZ — cross-run memory backfilled 7 prior reports including
+        4 personality+memory queries. A new query in that family should
+        return at least one match with cosine ≥ 0.85. Guards the
+        end-to-end pipeline: embedding works → index loads → cosine
+        compute → threshold filter.
+
+  - id: bluesky_source_type_in_corpus
+    category: routing
+    query: |
+      Simon Willison Bluesky AI commentary
+    filters:
+      source_types: ["bluesky_post"]
+    expected:
+      must_have_source_types: ["bluesky", "bluesky_post"]
+      min_hits: 1
+      reasoning: |
+        Patch WW — Bluesky native RSS adapter. Filtering search by
+        source_type=bluesky_post should return at least one chunk.
+        Initial ingestion may produce zero items if the BSky timer
+        hasn't run yet — in that case the case will fail honestly,
+        signaling the user to run `python -m ingest.run --adapter
+        bsky_simon_willison`.
+    blocked_until: bluesky_first_run
+
+  - id: github_release_in_corpus
+    category: routing
+    query: |
+      vLLM release notes performance improvements
+    filters:
+      source_types: ["github_release"]
+    expected:
+      must_have_source_types: ["github_release", "github-releases"]
+      min_hits: 1
+      reasoning: |
+        Patch RR — GitHub releases.atom adapter. Filtering search by
+        source_type=github_release should return at least one chunk
+        once the timer has fired. Guards both the adapter wiring and
+        the new source_type's directory mapping in run.py.
+    blocked_until: github_releases_first_run
+
+  - id: domain_penalty_demotes_aggregator
+    category: authority
+    query: |
+      best embedding models 2026 list comparison
+    expected:
+      must_avoid_domains: ["medium.com", "hackernoon.com", "locallyuncensored"]
+      reasoning: |
+        Patch VV — SEO domain penalty at retrieval. A "best of"-shaped
+        query is exactly the pattern that surfaces aggregator listicles.
+        With Patch VV active, those domains rank lower and shouldn't
+        appear in top-3. Guards the retrieval-time penalty as opposed
+        to the prior prompt-only Patch AA.
+
+  - id: corpus_count_returns_positive
+    category: tooling
+    query: |
+      neural network attention transformer
+    expected:
+      min_hits: 1
+      reasoning: |
+        Patch DDD — corpus_count tool exists and returns a positive
+        count for a generic ML query. Tested via the standard search
+        path; corpus_count is a thin wrapper over the same scan.
+        Counter-fails if corpus is completely empty or if the tool
+        was inadvertently removed.
+
+  - id: entity_filter_narrows_results
+    category: tooling
+    query: |
+      AI lab research findings
+    filters:
+      entity: "karpathy"
+    expected:
+      must_mention:
+        - any of: ["Karpathy", "karpathy"]
+      min_hits: 1
+      reasoning: |
+        Patch DDD — entity filter on search() restricts to chunks whose
+        mentioned_authorities or mentioned_entities contains the value
+        (case-insensitive substring). With "karpathy" filter, every hit
+        should have Karpathy in its mentioned_* arrays. This relies on
+        Patch NN having populated mentioned_authorities — fails honestly
+        if mention detection hasn't run.

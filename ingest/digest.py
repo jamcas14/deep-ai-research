@@ -7,8 +7,11 @@ DeepSeek v4 dropped, they won't ask about it. This script produces a daily
 "what landed in the corpus yesterday" digest weighted by authority signal, so
 the user sees discoveries they'd otherwise miss.
 
-Cost: ~0 — no LLM call required. Optional Haiku summarization step fires only
-when ANTHROPIC_API_KEY is set in .env (~$0.01-0.05/day).
+Patch EEE (2026-05-05): per-bucket prose summary via `claude -p` Haiku 4.5.
+Off by default; opt-in with --summarize. Each bucket gets a 2-3 sentence
+"what these items collectively say" preamble. Cost: ~6 buckets × ~$0.005/call
+= ~$0.03/day against the user's Max subscription rate limits (no API key
+required — uses headless `claude -p`).
 
 Output:
 - ./digests/<YYYY-MM-DD>.md  — terminal-friendly user-facing digest (gitignored)
@@ -16,7 +19,8 @@ Output:
   (so future /deep-ai-research runs can retrieve past digests as "what was happening")
 
 Usage:
-    python -m ingest.digest                   # last 24h
+    python -m ingest.digest                   # last 24h, no summaries
+    python -m ingest.digest --summarize       # last 24h + Haiku per-bucket prose
     python -m ingest.digest --since-hours 48  # last 48h
     python -m ingest.digest --dry-run         # don't write
 """
@@ -24,8 +28,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
+import re
+import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -192,8 +200,79 @@ def rank_and_bucket(items: list[DigestItem]) -> dict[str, list[DigestItem]]:
     return buckets
 
 
-def render_terminal_digest(buckets: dict[str, list[DigestItem]], since: datetime, total: int) -> str:
-    """User-facing digest — clean markdown for daily reading."""
+def haiku_summarize_bucket(cat_label: str, items: list[DigestItem]) -> str:
+    """Patch EEE — per-bucket prose summary via `claude -p` Haiku 4.5.
+
+    Returns a 2-3 sentence "what landed here today" summary. Returns empty
+    string on any failure (claude CLI missing, network blip, parse error).
+    Caller should render the rest of the bucket regardless.
+    """
+    if not items:
+        return ""
+    if shutil.which("claude") is None:
+        log.debug("claude CLI not on PATH; skipping bucket summary")
+        return ""
+
+    # Build a compact item list for Haiku to summarize.
+    item_lines: list[str] = []
+    for it in items[:8]:
+        item_lines.append(
+            f"- {it.publication} ({it.date.isoformat()}): {it.title or '(no title)'}"
+            + (f" — {it.snippet[:200]}" if it.snippet else "")
+        )
+    items_text = "\n".join(item_lines)
+
+    system_prompt = (
+        "You write a 2-3 sentence summary of what landed in an AI/ML "
+        "research-corpus bucket today. Be specific (cite a couple of the "
+        "actual items, not vague themes). No preamble, no markdown headings, "
+        "just the prose. ≤80 words."
+    )
+    user_prompt = (
+        f"Bucket: {cat_label}\n\nItems landed in this bucket:\n{items_text}\n\n"
+        "Write the summary."
+    )
+    cmd = [
+        "claude", "-p", "--tools", "",
+        "--no-session-persistence", "--disable-slash-commands",
+        "--system-prompt", system_prompt,
+        "--output-format", "json",
+        "--model", "claude-haiku-4-5",
+        user_prompt,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60, check=False
+        )
+        if proc.returncode != 0:
+            log.warning("claude -p exit %d: %s", proc.returncode, proc.stderr.strip()[:200])
+            return ""
+        data = json.loads(proc.stdout)
+        if data.get("is_error"):
+            return ""
+        text = (data.get("result") or "").strip()
+        # Strip code fences if Haiku wrapped the output.
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:\w+)?\s*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text)
+        return text
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+        log.warning("haiku bucket summary failed: %s", e)
+        return ""
+
+
+def render_terminal_digest(
+    buckets: dict[str, list[DigestItem]],
+    since: datetime,
+    total: int,
+    *,
+    summarize: bool = False,
+) -> str:
+    """User-facing digest — clean markdown for daily reading.
+
+    When `summarize=True` (Patch EEE), each bucket is preceded by a Haiku-generated
+    2-3 sentence prose summary. Cost ~$0.005/bucket against the Max subscription.
+    """
     lines: list[str] = []
     today = datetime.now(timezone.utc).date()
     lines.append(f"# Daily Digest — {today.isoformat()}")
@@ -213,6 +292,11 @@ def render_terminal_digest(buckets: dict[str, list[DigestItem]], since: datetime
         rendered_any = True
         lines.append(f"## {cat_label}")
         lines.append("")
+        if summarize:
+            summary = haiku_summarize_bucket(cat_label, items)
+            if summary:
+                lines.append(f"_{summary}_")
+                lines.append("")
         for it in items:
             sig_str = f"  ★ {it.authority_signal}: {', '.join(it.authorities_named[:3])}" if it.authority_signal else ""
             lines.append(f"- **[{it.title}]({it.url})** — *{it.publication}* ({it.date.isoformat()}){sig_str}")
@@ -230,12 +314,18 @@ def render_terminal_digest(buckets: dict[str, list[DigestItem]], since: datetime
     return "\n".join(lines)
 
 
-def render_corpus_digest_body(buckets: dict[str, list[DigestItem]], since: datetime, total: int) -> str:
+def render_corpus_digest_body(
+    buckets: dict[str, list[DigestItem]],
+    since: datetime,
+    total: int,
+    *,
+    summarize: bool = False,
+) -> str:
     """Corpus-queryable digest body — same content, but designed to be retrieved
     by future /deep-ai-research recency passes. Uses keyword-rich phrasing and
     explicit mentions so corpus search works."""
     # The terminal version is already keyword-rich; reuse with minor framing.
-    body = render_terminal_digest(buckets, since, total)
+    body = render_terminal_digest(buckets, since, total, summarize=summarize)
     return body
 
 
@@ -247,11 +337,12 @@ def write_digest_outputs(
     corpus_dir: Path,
     digests_dir: Path,
     dry_run: bool,
+    summarize: bool = False,
 ) -> tuple[Path, Path]:
     """Write both outputs. Returns (terminal_path, corpus_path)."""
     today = datetime.now(timezone.utc).date()
-    terminal_text = render_terminal_digest(buckets, since, total)
-    corpus_text = render_corpus_digest_body(buckets, since, total)
+    terminal_text = render_terminal_digest(buckets, since, total, summarize=summarize)
+    corpus_text = render_corpus_digest_body(buckets, since, total, summarize=summarize)
 
     terminal_path = digests_dir / f"{today.isoformat()}.md"
     corpus_path = corpus_dir / "digests" / f"{today.isoformat()}.md"
@@ -295,6 +386,12 @@ def write_digest_outputs(
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Daily authority-feed digest.")
     p.add_argument("--since-hours", type=int, default=24, help="Window in hours (default 24).")
+    p.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Patch EEE — add Haiku per-bucket prose summaries via `claude -p`. "
+             "~$0.005/bucket against Max plan rate limits (no API key required).",
+    )
     p.add_argument("--dry-run", action="store_true", help="Don't write outputs.")
     p.add_argument("-v", "--verbose", action="count", default=0)
     args = p.parse_args(argv)
@@ -328,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         corpus_dir=corpus_dir,
         digests_dir=digests_dir,
         dry_run=args.dry_run,
+        summarize=args.summarize,
     )
 
     return 0

@@ -140,8 +140,26 @@ def _ensure_model() -> None:
             log.warning("sentence-transformers not installed; vector search disabled")
             _state["model"] = False  # sentinel: tried, failed
             return
-        log.info("loading embedding model (CPU)")
-        _state["model"] = SentenceTransformer("Snowflake/snowflake-arctic-embed-s", device="cpu")
+        # Patch AAA — read model + device from config/embedding.yaml.
+        cfg_path = PROJECT_ROOT / "config" / "embedding.yaml"
+        model_id = "Snowflake/snowflake-arctic-embed-s"
+        device_pref = "auto"
+        if cfg_path.exists():
+            try:
+                data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                model_id = str(data.get("model") or model_id)
+                device_pref = str(data.get("device") or "auto")
+            except yaml.YAMLError:
+                pass
+        device = device_pref
+        if device == "auto":
+            try:
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            except ImportError:
+                device = "cpu"
+        log.info("loading embedding model %s on %s", model_id, device)
+        _state["model"] = SentenceTransformer(model_id, device=device)
 
 
 # ---------- hit assembly ----------
@@ -459,6 +477,8 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
     type_filter = filters.get("source_types")
     author_filter = filters.get("authors")
     min_boost = filters.get("min_authority_boost")
+    entity_filter = filters.get("entity")  # Patch DDD — match in mentioned_*
+    entity_filter_lower = entity_filter.lower() if isinstance(entity_filter, str) else None
 
     for sid in source_ids:
         chunk_id, d = best_per_source[sid]
@@ -475,6 +495,16 @@ def search(query: str, *, top_n: int = DEFAULT_TOP_N, filters: dict[str, Any] | 
         if author_filter:
             authors = fm.get("authors", [])
             if not any(a in author_filter for a in authors):
+                continue
+        # Patch DDD — entity filter matches mentioned_entities OR mentioned_authorities.
+        # Case-insensitive substring within each tag (so "qwen" matches
+        # "Qwen3-Embedding-0.6B"). Empty entity filter is a no-op.
+        if entity_filter_lower:
+            mentioned = [
+                *(fm.get("mentioned_entities") or []),
+                *(fm.get("mentioned_authorities") or []),
+            ]
+            if not any(entity_filter_lower in str(m).lower() for m in mentioned):
                 continue
 
         boost = _authority_boost(eng_map.get(sid, []))
@@ -608,6 +638,108 @@ def fetch_detail(source_id: str) -> dict[str, Any]:
     return {"error": f"source_id {source_id} not found"}
 
 
+def count(
+    topic: str | None = None,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    source_types: list[str] | None = None,
+    entity: str | None = None,
+) -> dict[str, Any]:
+    """Patch DDD — corpus_count tool. Density monitoring for any topic +
+    filter combination. Cheaper than search because it skips score
+    computation.
+
+    Returns:
+        {"count": <int>, "filters": {...}, "topic": "..."}
+    """
+    _ensure_state()
+    cache_key = _cache_key("count", (topic,), {
+        "since": since, "until": until,
+        "source_types": tuple(source_types) if source_types else None,
+        "entity": entity,
+    })
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    paths = _state["paths"]
+    corpus_dir = (PROJECT_ROOT / paths["corpus_dir"]).resolve()
+    since_d = _parse_date(since)
+    until_d = _parse_date(until)
+    entity_lower = entity.lower() if entity else None
+    topic_terms = [t.lower() for t in re.findall(r"[A-Za-z0-9_]+", topic)] if topic else []
+
+    n = 0
+    for path in corpus_dir.rglob("*.md"):
+        if "digests" in path.parts:
+            continue
+        try:
+            fm, body = read_post(path)
+        except Exception:  # noqa: BLE001
+            continue
+        if since_d and fm.date < since_d:
+            continue
+        if until_d and fm.date > until_d:
+            continue
+        if source_types and fm.source_type not in source_types:
+            continue
+        if entity_lower:
+            mentioned = [
+                *(fm.mentioned_entities or []),
+                *(fm.mentioned_authorities or []),
+            ]
+            if not any(entity_lower in str(m).lower() for m in mentioned):
+                continue
+        if topic_terms:
+            haystack = (body or "").lower()
+            if not any(t in haystack for t in topic_terms):
+                continue
+        n += 1
+
+    result: dict[str, Any] = {
+        "count": n,
+        "topic": topic,
+        "filters": {
+            "since": since,
+            "until": until,
+            "source_types": source_types,
+            "entity": entity,
+        },
+    }
+    _cache_put(cache_key, result)
+    return result
+
+
+def related(source_id: str, *, top_n: int = 10) -> list[dict[str, Any]]:
+    """Patch DDD — corpus_related tool. Returns the top-N chunks most
+    similar (by vector cosine) to the given source_id, excluding the
+    source itself. For cluster navigation: 'show me other things like
+    this one'.
+    """
+    _ensure_state()
+    cache_key = _cache_key("related", (source_id,), {"top_n": top_n})
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    detail = fetch_detail(source_id)
+    if "error" in detail:
+        return []
+    body = detail.get("body") or ""
+    if not body.strip():
+        return []
+
+    # Use the first ~1500 chars as the query — captures topic without
+    # blowing past the embedding model's input window.
+    query_text = body[:1500]
+    hits = search(query_text, top_n=top_n + 1)
+    # Drop the source itself if it shows up first (it usually does).
+    filtered = [h for h in hits if h.get("source_id") != source_id][:top_n]
+    _cache_put(cache_key, filtered)
+    return filtered
+
+
 def _parse_date(value: Any) -> date | None:
     if value is None:
         return None
@@ -642,7 +774,8 @@ def main() -> None:
                       since: str | None = None, until: str | None = None,
                       source_types: list[str] | None = None,
                       min_authority_boost: float | None = None,
-                      authors: list[str] | None = None) -> list[dict[str, Any]]:
+                      authors: list[str] | None = None,
+                      entity: str | None = None) -> list[dict[str, Any]]:
         """Hybrid corpus search (RRF k=60 over FTS5 + sqlite-vec) with
         authority boost and per-content-type recency decay.
 
@@ -653,6 +786,11 @@ def main() -> None:
             source_types: e.g. ["newsletter", "blog_post"].
             min_authority_boost: only return results with boost >= this.
             authors: restrict to specific authors.
+            entity: Patch DDD — restrict to chunks whose mentioned_entities
+                or mentioned_authorities contains this string (case-insensitive
+                substring match). Combine with date_range and source_types
+                for sharply-targeted retrieval ("Karpathy mentions in lab
+                blogs since 2026-01").
         """
         filters: dict[str, Any] = {}
         if since: filters["since"] = since
@@ -660,7 +798,47 @@ def main() -> None:
         if source_types: filters["source_types"] = source_types
         if min_authority_boost is not None: filters["min_authority_boost"] = min_authority_boost
         if authors: filters["authors"] = authors
+        if entity: filters["entity"] = entity
         return search(query, top_n=top_n, filters=filters)
+
+    @server.tool()
+    def corpus_count(topic: str | None = None,
+                     since: str | None = None,
+                     until: str | None = None,
+                     source_types: list[str] | None = None,
+                     entity: str | None = None) -> dict[str, Any]:
+        """Patch DDD — count chunks matching filters. Density-monitoring tool;
+        cheaper than corpus_search since it skips ranking. Useful for
+        deciding whether the corpus has enough coverage on a topic before
+        spending researcher budget on it.
+
+        Args:
+            topic: optional substring filter on chunk body.
+            since/until: ISO date filters.
+            source_types: restrict to e.g. ["newsletter", "lab_blog"].
+            entity: same semantics as corpus_search entity filter.
+
+        Returns:
+            {"count": int, "topic": ..., "filters": {...}}
+        """
+        return count(topic, since=since, until=until,
+                     source_types=source_types, entity=entity)
+
+    @server.tool()
+    def corpus_related(source_id: str, top_n: int = 10) -> list[dict[str, Any]]:
+        """Patch DDD — find chunks similar to a given source. Cluster
+        navigation: 'show me other things like this one'. Useful when
+        the user retrieves a single load-bearing source and wants to
+        broaden context without composing a fresh query.
+
+        Args:
+            source_id: 16-char hex from frontmatter.
+            top_n: max results.
+
+        Returns:
+            corpus_search-style hit dicts, excluding the source itself.
+        """
+        return related(source_id, top_n=top_n)
 
     @server.tool()
     def corpus_find_by_authority(authority_id: str,

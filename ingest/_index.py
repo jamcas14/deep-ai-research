@@ -13,10 +13,30 @@ from pathlib import Path
 # Use pysqlite3 (modern bundled SQLite) so sqlite-vec ABI matches.
 import pysqlite3 as sqlite3
 import sqlite_vec
+import yaml
 
 log = logging.getLogger(__name__)
 
-EMBED_DIM = 384  # snowflake-arctic-embed-s
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_embed_dim() -> int:
+    """Patch AAA — read dim from config/embedding.yaml; fall back to 384
+    (arctic-embed-s default) if config is missing or malformed."""
+    cfg = PROJECT_ROOT / "config" / "embedding.yaml"
+    if not cfg.exists():
+        return 384
+    try:
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return 384
+    dim = data.get("dim")
+    if isinstance(dim, int) and dim > 0:
+        return dim
+    return 384
+
+
+EMBED_DIM = _load_embed_dim()
 
 
 SCHEMA = """

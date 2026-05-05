@@ -1,0 +1,26 @@
+# Patch AAA (2026-05-05) — embedding model configuration.
+#
+# Default: snowflake-arctic-embed-s (33M params, 384-dim, Apache-2.0).
+# This is the v1 corpus default — every existing chunk's vector lives in a
+# 384-dim vec0 table, so changing `dim` requires re-embedding the entire
+# corpus (~2-4h CPU on 8K chunks).
+#
+# Migration to Qwen3-Embedding-0.6B (610M params, 1024-dim, MTEB-R 61.82,
+# Apache-2.0) procedure:
+#   1. Stop the systemd-timer ingest service (so concurrent writes don't
+#      collide with the migration).
+#   2. Run `python -m ingest.migrate_embedding --to Qwen/Qwen3-Embedding-0.6B
+#      --confirm`. The script backs up the sqlite DB, drops the existing vec0
+#      table, recreates it at the new dim, and re-embeds every chunk via the
+#      target model. Expect 2-4h on CPU; ~30-45min on GPU if torch+CUDA is
+#      installed.
+#   3. Update this file's `model` and `dim` values to match.
+#   4. Restart the systemd-timer ingest service.
+#
+# DO NOT change `dim` here without running the migration — the vec0 table
+# enforces the dimension at insert-time, so a mismatch will cause all
+# subsequent chunk-embeds to fail.
+
+model: Snowflake/snowflake-arctic-embed-s
+dim: 384
+device: auto                   # auto | cuda | cpu
