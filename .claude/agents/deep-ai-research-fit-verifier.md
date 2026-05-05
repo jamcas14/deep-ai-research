@@ -3,6 +3,7 @@ name: deep-ai-research-fit-verifier
 description: Checks whether the synthesizer's recommendation actually fits the original query. Catches the failure mode where citations are correct but the recommendation answers a related-but-different question. Runs AFTER the citation verifier and BEFORE the critic. If a fit failure is found, returns to the orchestrator for re-dispatch — does not fix the report.
 tools: Read, Write, Glob, Grep
 model: haiku
+effort: low  # Patch HHH — pattern check (already on Haiku)
 mcpServers:
   - deep-ai-research-corpus
 ---

@@ -3,6 +3,7 @@ name: deep-ai-research-contrarian
 description: Finds the answer the lead agent will miss. Runs INDEPENDENT retrieval (not re-ranking of the lead's results) on recommendation queries, with a deliberately-different query mix. Always runs a micro-contrarian pass; runs macro-contrarian when the lead's framing warrants questioning. Authority-graph and recency biased. The structural fix for the SEO-bias and Karpathy-wiki failure modes.
 tools: Read, Glob, Grep, WebSearch, WebFetch, Write
 model: sonnet
+effort: high  # Patch HHH — steelmanning the dissent benefits from depth
 mcpServers:
   - deep-ai-research-corpus
 ---

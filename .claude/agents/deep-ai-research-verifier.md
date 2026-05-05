@@ -3,6 +3,7 @@ name: deep-ai-research-verifier
 description: Samples the 12 most-load-bearing citations from a draft report and re-fetches each cited source to confirm the claim is in it (Patch T). Priority order — quoted passages first (FACTUM 2026 finding: highest fabrication rate), then specific numbers/dates/stats, then §1 Conclusion citations, then §2 panel citations. Catches citation fabrication — the single biggest failure mode of all deep-research tools. Returns per-citation pass/fail/inconclusive with evidence excerpts.
 tools: Read, WebFetch
 model: sonnet
+effort: low  # Patch HHH — fetch + substring match, mechanical
 mcpServers:
   - deep-ai-research-corpus
 ---

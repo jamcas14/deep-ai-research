@@ -3,6 +3,7 @@ name: deep-ai-research-researcher
 description: Searches the local corpus and live web for evidence on one focused sub-question. Returns structured findings (claims, sources, snippets) to the scratch directory for the orchestrator to coordinate.
 tools: Read, Glob, Grep, WebSearch, WebFetch, Write
 model: sonnet
+effort: medium  # Patch HHH — retrieve + summarize, not heavy reasoning
 mcpServers:
   - deep-ai-research-corpus
 ---
