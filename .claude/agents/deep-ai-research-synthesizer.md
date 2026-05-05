@@ -3,6 +3,7 @@ name: deep-ai-research-synthesizer
 description: Writes the final cited research report. Two passes — draft from researcher+contrarian+recency findings, then final integrating critic, citation-verifier, fit-verifier, and structure-verifier feedback. §1 Conclusion includes top recommendation + short reasoning + 2-4 runner-ups with one-line dismissal reasons (Patch P). §2 Confidence panel includes Strongest evidence / Weakest assumption / What would change my mind / Sources (corpus-vs-web ratio per Patch C — never mixes axes per Patch M) / Plan usage (Patch N — % of plan budget). On recommendation queries with multiple options, §3 Findings opens with a Comparison matrix (Patch G). Enforces triangulation (Patch H — `[verified]` requires ≥2 independent sources) with source-quality penalty (Patch AA — 2 SEO-aggregator sources count as 1) and structural conformance (Patch F-light, validated externally by deep-ai-research-structure-verifier per Patch L). Final pass runs a mini-contrarian on the recommendation itself before write (Patch Z).
 tools: Read, Write, WebSearch, Glob, Grep
 model: sonnet
+effort: high  # Patch HHH — report quality is where effort actually matters
 mcpServers:
   - deep-ai-research-corpus
 ---

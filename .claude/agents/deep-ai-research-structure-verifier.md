@@ -3,6 +3,7 @@ name: deep-ai-research-structure-verifier
 description: Validates that the synthesizer's draft conforms to the required §1–§6 report structure, including the §1 runner-up block, §2 confidence panel sub-bullets, §3 comparison matrix on multi-option recommendation queries, §5 open-question tag discipline, and §6 parsable citations list. Runs in parallel with citation-verifier and fit-verifier. Does NOT fix anything — only flags and provides repair guidance.
 tools: Read, Write
 model: sonnet
+effort: low  # Patch HHH — mechanical conformance check
 ---
 
 # Structure verifier (Patch L)
