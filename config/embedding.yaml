@@ -5,17 +5,35 @@
 # 384-dim vec0 table, so changing `dim` requires re-embedding the entire
 # corpus (~2-4h CPU on 8K chunks).
 #
-# Migration to Qwen3-Embedding-0.6B (610M params, 1024-dim, MTEB-R 61.82,
-# Apache-2.0) procedure:
-#   1. Stop the systemd-timer ingest service (so concurrent writes don't
-#      collide with the migration).
+# ⚠ DO NOT MIGRATE under the current compute envelope.
+# (See ~/.claude/projects/.../memory/feedback_no_gpu_no_api.md for the rule.)
+#
+# The recommended target was Qwen3-Embedding-0.6B (610M params, 1024-dim,
+# MTEB-R 61.82). It IS a local-CPU model and fits the "no API key" half of
+# the envelope, but it does NOT fit the "stay light enough that interactive
+# runs don't degrade" half:
+#
+#   metric                       arctic-embed-s    Qwen3-Embedding-0.6B
+#   ---------------------------  ----------------  --------------------
+#   parameters                   33M               610M       (~18×)
+#   RAM (fp32)                   ~130MB            ~1.5GB     (~12×)
+#   CPU latency / query          ~50ms             ~250-500ms (~5-10×)
+#   retrieval-call cost / run    barely felt       +5-10s across ~25 calls
+#   one-time corpus re-embed     ~7 min            ~70 min
+#   MTEB-R                       ~57               61.82      (+9% lift)
+#
+# The 9% retrieval-quality lift is real but not worth degrading every
+# /deep-ai-research run by 5-10s. Bigger leverage comes from Patches NN
+# (mention detection), VV (domain penalty), and ZZ (cross-run memory),
+# all of which are CPU-cheap or subscription-based.
+#
+# If you ever DO decide to migrate (e.g. acquire spare GPU time, accept
+# the latency, batch with contextual chunking), the procedure is:
+#   1. Stop the systemd-timer ingest service.
 #   2. Run `python -m ingest.migrate_embedding --to Qwen/Qwen3-Embedding-0.6B
-#      --confirm`. The script backs up the sqlite DB, drops the existing vec0
-#      table, recreates it at the new dim, and re-embeds every chunk via the
-#      target model. Expect 2-4h on CPU; ~30-45min on GPU if torch+CUDA is
-#      installed.
-#   3. Update this file's `model` and `dim` values to match.
-#   4. Restart the systemd-timer ingest service.
+#      --dim 1024 --confirm`.
+#   3. Restart the systemd-timer ingest service.
+# The migration script backs up the sqlite DB and config first.
 #
 # DO NOT change `dim` here without running the migration — the vec0 table
 # enforces the dimension at insert-time, so a mismatch will cause all
@@ -23,4 +41,8 @@
 
 model: Snowflake/snowflake-arctic-embed-s
 dim: 384
-device: auto                   # auto | cuda | cpu
+device: auto                   # auto | cuda | cpu — `auto` falls back to cpu
+                                # when no CUDA is available; current default
+                                # arctic-embed-s is fast enough on CPU that
+                                # forcing GPU would only matter for a future
+                                # model swap.

@@ -1,5 +1,12 @@
 """Patch TT — cross-encoder reranker.
 
+⚠ KEPT OFF under the current compute envelope.
+   568M-param cross-encoder × top-50 candidates per researcher call × 8-call
+   cap = multi-minute reranking PER RUN on CPU. Doesn't fit "small CPU model
+   in the hot path." (See ~/.claude/projects/.../memory/feedback_no_gpu_no_api.md.)
+   Skeleton kept for the case where the constraint changes (spare GPU, smaller
+   corpus, or a 100M-class reranker becomes available).
+
 Reranks the top-K candidates from the RRF combine step using a query×candidate
 cross-encoder. Cross-encoders process the query and each candidate together,
 producing a relevance score that's substantially better than bi-encoder

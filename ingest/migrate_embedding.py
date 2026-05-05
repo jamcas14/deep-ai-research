@@ -1,8 +1,17 @@
 """Patch AAA — embedding model migration.
 
+⚠ DEFERRED under the current compute envelope.
+   Don't run this without an explicit decision to accept the latency cost.
+   (See ~/.claude/projects/.../memory/feedback_no_gpu_no_api.md.)
+
 Switches the corpus from one embedding model to another, re-embedding every
-chunk against the new model. Most useful migration: arctic-embed-s (384-dim,
-33M params) → Qwen3-Embedding-0.6B (1024-dim, 610M params, MTEB-R 61.82).
+chunk against the new model. Original migration target was arctic-embed-s
+(384-dim, 33M) → Qwen3-Embedding-0.6B (1024-dim, 610M, MTEB-R 61.82). The
++9% retrieval quality lift is real but the 5-10× per-query CPU latency
+makes interactive `/deep-ai-research` runs visibly slower; the project's
+compute envelope (CPU-light models in the hot path or Claude subscription
+elsewhere) doesn't tolerate that under normal use. Skeleton kept for the
+case where the constraint changes.
 
 Procedure:
   1. Backs up the sqlite DB to `<sqlite_path>.<timestamp>.bak` so a failed
