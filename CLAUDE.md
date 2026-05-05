@@ -2,6 +2,8 @@
 
 A personal deep-research tool whose subject domain is AI/ML. Runs entirely inside Claude Code under the $200 Max plan. **Markdown-first corpus + curated authority graph + structural fixes for the SEO bias of existing tools.**
 
+> ⚠ If a `NEXT_TASK.md` file exists at the repo root, read it before doing anything else — it contains a hand-off task from a prior session.
+
 ## Why this exists
 
 Claude Research, Perplexity, OpenAI Deep Research, and similar tools fail in two reproducible ways for AI/ML:
