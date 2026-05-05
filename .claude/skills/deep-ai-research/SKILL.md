@@ -13,7 +13,7 @@ You are running the AI/ML deep-research workflow in the main conversation contex
 
 ## Honesty contract — read first
 
-Before doing anything, read `/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`. The contract binds every dispatched subagent and you. Pass its absolute path to every subagent you dispatch.
+Before doing anything, read `/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`. The contract binds every dispatched subagent and you. Pass its absolute path to every subagent you dispatch.
 
 Section §9 of the contract — *Coverage over speed* — is the load-bearing rule for this skill: **forgetting an option is worse than picking the wrong best one.** The user explicitly authorized longer wall time and over-budget runs in service of completeness. Don't rate-limit research.
 
@@ -84,7 +84,7 @@ If no digest exists or all digests are >7 days old, fall back to the full loop a
 
 ## Stage 1 — Classification + sub-question planning + scratch dir setup
 
-Generate a `<run-id>` of the form `YYYY-MM-DD-HHMMSS-<slug>` where slug is the first 30 chars of the question slugified. Create `.claude/scratch/<run-id>/`. Project root is `/home/jamie/code/projects/deep-ai-research` (use absolute paths for subagent inputs).
+Generate a `<run-id>` of the form `YYYY-MM-DD-HHMMSS-<slug>` where slug is the first 30 chars of the question slugified. Create `.claude/scratch/<run-id>/`. Project root is `/home/jamie/projects/deep-ai-research` (use absolute paths for subagent inputs).
 
 **Classify** the query into one or more of:
 - `recency` — "what's the latest...", "current state of..."
@@ -197,7 +197,7 @@ The runtime executes these concurrently. They are independent: each researcher o
 Each dispatched agent receives:
 - The sub-question (or contrarian's one-line obvious-answer label)
 - The scratch dir path (absolute)
-- The absolute path to the honesty contract: `/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`
+- The absolute path to the honesty contract: `/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`
 - The clarification Q&A from `manifest.json`
 - For researchers: the `must_cover_families` list (so the researcher knows what option sub-classes are mandatory)
 - The path to `recency_pass.json`
@@ -249,14 +249,15 @@ The critic now runs in parallel with the three verifiers in Stage 5. This stage 
 
 ## Stage 8 — Synthesizer final (sequential, blocks on stage 5 outputs)
 
-Dispatch the synthesizer for its second pass. Pass: draft, all three verifier outputs, critic feedback, retrieval log, manifest. The synthesizer:
+Dispatch the synthesizer for its second pass. Pass: draft, all three verifier outputs, critic feedback, retrieval log, manifest. **Stage 8 is the SOLE place verifier-residue integration happens** — the critic ran in parallel with verifiers (Patch PP) and did NOT read their outputs; the synthesizer here is the integrator. The synthesizer:
 
 1. Drops/repairs every `fail` citation; addresses critic critical/major issues
 2. Tries one targeted WebSearch per `[research-target-dropped]` item to close it
 3. Computes the corpus/web sourcing metric from `retrieval_log.jsonl` (Patch C, exact format) — with malformed-log degraded-integrity caveat (Patch I) if ≥10% of entries lack proper `tool` fields
 4. Computes the plan-usage metric (Patch N) from `config/plan.yaml` and the manifest's running token tally
 5. Applies triangulation rule (Patch H): `[verified]` requires verifier `pass` AND ≥2 independent inline sources; downgrade single-source claims to `[inferred]`
-6. Produces `reports/<run-id>.md` (and copies to `.claude/scratch/<run-id>/synthesizer-final.md`)
+6. Addresses fit-verifier `uncertain_flags_for_critic` (formerly handled by critic; moved here per Patch PP) — add caveats, demote claims, or move to §4/§5 as appropriate
+7. Produces `reports/<run-id>.md` (and copies to `.claude/scratch/<run-id>/synthesizer-final.md`)
 
 ## Stage 9 — Update manifest + return to caller
 

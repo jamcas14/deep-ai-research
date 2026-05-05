@@ -28,7 +28,7 @@ external-validator role; needs to read draft + manifest + must_cover_families).
 ## Honesty contract — read first
 
 Before doing anything, read
-`/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`.
+`/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`.
 The contract binds you absolutely.
 
 ## Your job

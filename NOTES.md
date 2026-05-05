@@ -39,7 +39,7 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 - Step 4 scaffold: `.claude/skills/deep-ai-research/SKILL.md` + 6 agent files (`orchestrator`, `researcher`, `contrarian`, `verifier`, `critic`, `synthesizer`). System prompts substantive; they call out the structural fixes (forced recency pass, contrarian as first-class, verifier discipline against fabrication).
 
 **Project rename (2026-05-03 evening):**
-- Project renamed twice in same session as user iterated on the name. Final: **`deep-ai-research`** (codename **`dair`**). Previous: `claude-deep-research-ai-domain` → `deep-research-ai-related (drair)` → `deep-ai-research (dair)`. Directory at `/home/jamie/code/projects/deep-ai-research`.
+- Project renamed twice in same session as user iterated on the name. Final: **`deep-ai-research`** (codename **`dair`**). Previous: `claude-deep-research-ai-domain` → `deep-research-ai-related (drair)` → `deep-ai-research (dair)`. Directory at `/home/jamie/projects/deep-ai-research`.
 - `pyproject.toml` `name = "deep-ai-research"`. Description references AI/ML as subject domain.
 - All filenames, headings, user agents, backup tarball names updated.
 - `.venv` rebuilt twice after each directory rename (uv stores absolute paths).
@@ -129,7 +129,7 @@ Monthly rotation: previous month moves to `notes/archive/NOTES-YYYY-MM.md`.
 2. **The Batch newsletter** — verify the current RSS URL (`/feed/` 404'd) so I can re-enable the adapter.
 3. **End-to-end `/deep-ai-research` smoke test** — I can't invoke it from inside this Claude Code session without recursion. You need to:
    - Open a fresh shell
-   - `cd ~/code/projects/deep-ai-research && claude`
+   - `cd ~/projects/deep-ai-research && claude`
    - Try `/deep-ai-research What's the latest from DeepSeek?`
    - Tell me what happens (success / specific error). If subagents reference `corpus-server` and the actual MCP name is `deep-ai-research-corpus`, those refs will need updating.
 4. **Authority graph expansion** — current 24 seeds is small. The monthly `source-discovery` job (Step 12) is supposed to surface candidates, but you can hand-add too.
@@ -1010,3 +1010,28 @@ Migration dry-run produces the right plan output without side effects.
 - CCC (DSPy/GEPA optimization) — depends on stable eval set. With BBB's 32
   cases shipped, this is now unblocked but is a substantial separate workstream.
 - Qwen3-Reranker-0.6B custom inference path (15% MTEB-R lift over bge).
+
+---
+
+## 2026-05-05 — P0 ops fixes (post-audit, Wave 5 P0)
+
+Two-loop audit (`analysis/2026-05-05-quality-review.md` + `analysis/2026-05-05-system-improvements-and-flaws.md`) surfaced concrete operational bugs. P0 fixes shipped this session:
+
+**P0.1 — Write tool added to citation verifier and critic agents.** Both agents claimed to write JSON/markdown outputs but lacked `Write` in their frontmatter. They were either failing silently or relying on undocumented orchestrator-side text capture.
+
+**P0.2 — Stale honesty-contract path fixed across 11 live files.** All agent prompts, SKILL.md, PLAN.md, NOTES.md (this file), ops scripts, and 7 systemd .service files referenced `/home/jamie/code/projects/deep-ai-research` (a path from before the project rename — see 2026-05-03 evening section). Actual repo lives at `/home/jamie/projects/deep-ai-research`. Subagents have been silently failing to load the contract; the honesty discipline observed in recent reports is from the rules being inlined in agent prompts, not from contract internalization. Note: systemd .service files now reference `%h/projects/deep-ai-research` — `systemctl --user daemon-reload` + `make install-timers` rerun needed for the change to take effect on the live timers.
+
+**P0.3 — CLAUDE.md synthesizer Opus version corrected to 4.6.** Was 4.7; PLAN.md and SKILL.md (Patch V) say 4.6 because of the MRCR v2 long-context regression (78.3% → 32.2%). CLAUDE.md was the only doc still on the wrong version.
+
+**P0.4 — Critic agent Patch-PP-consistent.** Critic prompt previously listed `verifier.json` and `fit_verifier.json` as inputs and had a Section 9 ("Fit verifier residue") referencing them. Patch PP moved critic to run in parallel with the verifiers — those inputs don't exist when critic starts. Updated: critic now reads only draft + retrieval log + manifest; Section 3 reframed to "suspect-looking claims a critical reader would notice"; Section 9 deleted and re-numbered. SKILL.md Stage 8 updated to make explicit the synthesizer-final pass is the SOLE place verifier-residue integration happens.
+
+**P0.5 — baseline_single_sonnet.py never-run status documented.** Patch DD's "load-bearing unrun experiment" (single-Sonnet vs multi-agent gating) has zero entries in `evals/runs/_history.jsonl`. Until this runs, the multi-agent /deep-ai-research default is empirically unjustified vs the simplest alternative. P1.1 of the post-audit plan refactors it to `claude -p` dispatch (per `feedback_no_gpu_no_api.md`'s no-API-key constraint) and runs it.
+
+**Surprises:**
+- The stale-path bug had compounded: 11 live files including 7 systemd .service files. Without P0.2, ingestion timers would have been pointing at the old directory if the user had ever installed them via `make install-timers` (which they may have).
+- The critic prompt + SKILL.md drift means past runs may have had silent dispatch failures or incomplete critic output (critic could not Write critic.md without the Write tool).
+- All seven agents had the same stale path. Subagents read prompt-inlined rules instead of the contract; functionally OK but means the "contract is binding" claim is half-true at best until P0.2 ships and contract is re-read on next dispatch.
+
+**To know for fresh session:**
+- P0 is complete; P1 (eval framework + judge + CI + baseline experiment) is the next phase per `~/.claude/plans/create-a-plan-to-quiet-wirth.md`.
+- The audit files in `analysis/` are uncommitted; they intentionally retain the stale-path string in their bug-description sections (do not regex-fix them).

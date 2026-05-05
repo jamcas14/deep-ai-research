@@ -58,8 +58,8 @@ In the background, systemd-timer fires `python -m ingest.run` every 15 min. Adap
 ## Models
 
 - Lead orchestrator + research subagents: **Sonnet 4.6**
-- Final synthesis on hard queries (conditional): **Opus 4.7**
-- Eval judge: **Opus 4.7**
+- Final synthesis on re-dispatch (conditional): **Opus 4.6** (NOT 4.7 — Opus 4.7 has an MRCR v2 long-context regression 78.3% → 32.2% per Patch V; 4.6 is the correct escape hatch for the synthesizer)
+- Eval judge: **Opus 4.6** (same MRCR rationale)
 - Embeddings: **`snowflake-arctic-embed-s`** (local CPU)
 - Podcast transcription: **faster-whisper** with `medium` model
 

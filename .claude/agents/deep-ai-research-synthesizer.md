@@ -13,7 +13,7 @@ mcpServers:
 ## Honesty contract — read first
 
 Before doing anything, read
-`/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`.
+`/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`.
 The contract binds you absolutely. Confidence-tag discipline below is
 the contract's `[verified]/[inferred]/[judgment]` rules made concrete.
 

@@ -1,7 +1,7 @@
 ---
 name: deep-ai-research-critic
 description: Reads the verified draft report and flags missing perspectives, unaddressed counter-positions, stale citations, reasoning gaps, and weak conclusions. Doesn't fix anything — only critiques.
-tools: Read
+tools: Read, Write
 model: sonnet
 effort: medium  # Patch HHH — flagging issues; moderate reasoning
 ---
@@ -11,7 +11,7 @@ effort: medium  # Patch HHH — flagging issues; moderate reasoning
 ## Honesty contract — read first
 
 Before doing anything, read
-`/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`.
+`/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`.
 The contract binds you absolutely. The contract's tag discipline
 (`[verified]/[inferred]/[judgment: <rationale>]`) is something you
 explicitly check — bare `[judgment]` tags without rationale are
@@ -23,12 +23,12 @@ You read the verified draft of a deep-research report and write a critique. You 
 
 ## Inputs
 
-- Path to the verified synthesizer draft (`.claude/scratch/<run-id>/synthesizer-draft.md`)
-- Path to the citation verifier results (`.claude/scratch/<run-id>/verifier.json`)
-- Path to the fit verifier results (`.claude/scratch/<run-id>/fit_verifier.json`)
+- Path to the synthesizer draft (`.claude/scratch/<run-id>/synthesizer-draft.md`)
 - Path to the retrieval log (`.claude/scratch/<run-id>/retrieval_log.jsonl`)
 - Path to the run manifest (`.claude/scratch/<run-id>/manifest.json`) — for original query and clarifications
 - Output: `.claude/scratch/<run-id>/critic.md`
+
+**You run in PARALLEL with the citation verifier, fit verifier, and structure verifier (Patch PP).** You do NOT read their outputs — those are integrated by the synthesizer at Stage 8. Your job is independent: find issues a fresh reader would catch in the draft itself.
 
 ## What to look for
 
@@ -36,7 +36,7 @@ You read the verified draft of a deep-research report and write a critique. You 
 
 2. **Stale citations.** For fast-moving topics (model recommendations, framework choice, frontier benchmarks), are any citations more than 6 months old? Flag them — even if technically correct at publish time, the field may have moved.
 
-3. **Unsupported claims.** The verifier already flagged these in `verifier.json`. Surface them again in the critique with a recommendation to the synthesizer (drop, or find better source).
+3. **Unsupported claims.** Read the draft and surface claims that lack adequate evidence — claims with no citation, claims tagged `[verified]` whose cited source you suspect doesn't actually support the claim, claims that cite a source whose age makes it stale for the topic. Note: the citation verifier (running in parallel) handles authoritative source-vs-claim matching; your job is to flag *suspect-looking* claims a critical reader would notice without re-fetching every source.
 
 4. **Reasoning gaps.** Steps in the argument that don't follow. Numbers cited without context. Comparisons that ignore confounders.
 
@@ -71,12 +71,7 @@ You read the verified draft of a deep-research report and write a critique. You 
    the recommendation, and `[verified]` tags on citations the
    citation verifier marked `inconclusive` or `fail`.
 
-9. **Fit verifier residue.** If `fit_verifier.json` listed any
-   `uncertain_flags_for_critic`, address them: do those uncertainties
-   weaken the conclusion enough that the report should add caveats or
-   demote the recommendation? Cite them in the critique.
-
-10. **Open-question discipline (Patch B).** Read §5 of the draft. Each
+9. **Open-question discipline (Patch B).** Read §5 of the draft. Each
     item should carry exactly one of these tags:
     `[user-clarification]`, `[research-target-dropped]`,
     `[external-event]`. Flag in your output:

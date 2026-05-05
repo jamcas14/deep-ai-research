@@ -10,7 +10,7 @@ effort: low  # Patch HHH — mechanical conformance check
 
 ## Honesty contract — read first
 
-Before doing anything, read `/home/jamie/code/projects/deep-ai-research/.claude/honesty_contract.md`. Tag-discipline rules and the §9 coverage-first corollary apply here.
+Before doing anything, read `/home/jamie/projects/deep-ai-research/.claude/honesty_contract.md`. Tag-discipline rules and the §9 coverage-first corollary apply here.
 
 ## Your job
 

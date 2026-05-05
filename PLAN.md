@@ -130,7 +130,7 @@ The previous Postgres+pgvector+Alembic+Docker plan is obsolete: once Claude Code
 
 ### Foreground (a research session)
 
-1. `cd ~/code/projects/deep-ai-research && claude`
+1. `cd ~/projects/deep-ai-research && claude`
 2. `/deep-ai-research <question>`
 3. Skill loads orchestrator subagent.
 4. **Clarification gate (strict).** Before classification, orchestrator runs the trigger checklist: hardware, budget, deployment context, term ambiguity, refusal-tolerance/content-tier, volume. If any trigger fires unstated AND the answer would change with it, it asks 2–4 sharp clarifying questions via `AskUserQuestion`. Skip rationale must quote user-provided text; inferred caller intent is not grounds to skip (honesty contract §8). Q&A is recorded in `manifest.json` and threaded to every subagent. Skipped only for self-directed exploration and simple factual queries.
