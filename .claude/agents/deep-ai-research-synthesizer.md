@@ -272,6 +272,31 @@ citation-verifier + fit-verifier feedback.
    or a fresh clone before Patch UU shipped), skip the breakdown
    sub-bullet entirely.
 
+   **Cross-run continuity (Patch ZZ revised, 2026-05-05).** Read
+   `.claude/scratch/<run-id>/prior_research.json`. If non-empty, render
+   a §2 sub-bullet showing how this run relates to past runs:
+
+   ```
+   - **Cross-run continuity:**
+     - 2026-05-04 (sim 0.91, "<prior question>"): consistent — this run
+       reaffirms the prior recommendation of <X>, with new evidence <Y>.
+     - 2026-04-22 (sim 0.87, "<prior question>"): differs — prior landed
+       on <Z>; this run lands on <W> because <reason for drift>.
+   ```
+
+   Compare this run's §1 recommendation against each prior `conclusion_excerpt`.
+   Three render modes per past run:
+   - `consistent` — same recommendation, possibly stronger evidence
+   - `differs` — different recommendation; explain WHY (new release, changed
+     constraint, fresh evidence)
+   - `narrows` — prior was broad, this run is more specific (or vice versa)
+
+   This is the user's drift-detection view. It is the ONLY place prior runs
+   surface; researchers and the contrarian operate without seeing prior
+   conclusions (Patch ZZ bias-prevention rule). Cap the sub-bullet at 3
+   prior runs; if `prior_research.json` is `[]` or missing, omit the
+   sub-bullet entirely (do not render an empty placeholder).
+
    **Researcher cap surface (Patch II).** Read `structure_verifier.json`
    for `researcher_cap_check`. If `verdict == "fail"`, append the
    violator detail to §2 Weakest assumption sub-bullet: `Researcher cap

@@ -28,6 +28,22 @@ from ingest.frontmatter import read_post
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
+def _load_dotenv_into_environ(path: Path) -> None:
+    """Minimal .env loader so HF_TOKEN reaches sentence-transformers when
+    the MCP runtime spawns this server (same pattern as ingest/run.py)."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
 # Lazy globals — initialized on first call so server starts fast.
 _state: dict[str, Any] = {
     "conn": None,
@@ -760,6 +776,12 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+
+    # Load .env so HF_TOKEN (and any other model credentials) reach the
+    # embedding-model loader. The MCP runtime spawns this process directly
+    # and does NOT inherit shell-level env, so we need an explicit loader
+    # — same pattern as ingest/run.py uses.
+    _load_dotenv_into_environ(PROJECT_ROOT / ".env")
 
     try:
         from mcp.server.fastmcp import FastMCP

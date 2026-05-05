@@ -110,7 +110,7 @@ cp .claude/state/last_usage_snapshot.json .claude/scratch/<run-id>/usage_snapsho
 ```
 The snapshot is populated by `ops/capture-usage.sh` after every assistant turn AND after every Agent dispatch (Patch JJ — registered as `Stop`, `SubagentStop`, and `PostToolUse` matching `Agent|Task` in `.claude/settings.local.json`). It contains `five_hour_pct`, `seven_day_pct`, `context_window_pct`, `model_id`, `session_id`. If the file is missing (e.g. running from a fresh clone before Patch CC was set up), write `{}` so the synthesizer falls back to Tier-1 file-size estimation gracefully.
 
-**Cross-run memory check (Patch ZZ).** Right after writing `manifest.json`, query the persistent cross-run index for similar past runs:
+**Cross-run memory check (Patch ZZ — synthesizer-only, no researcher injection).** Right after writing `manifest.json`, query the persistent cross-run index for similar past runs:
 
 ```bash
 uv run python -c "
@@ -125,9 +125,9 @@ print(json.dumps(out))
 " > .claude/scratch/<run-id>/prior_research.json
 ```
 
-If `prior_research.json` is non-empty after this call, the recency pass (Stage 2) will read it and include the prior conclusions as context. This avoids redundant research when the user asks a similar question they already had a /deep-ai-research run on (cosine ≥0.85 in 384-dim arctic-embed-s space).
+**Bias-prevention rule (REVISED 2026-05-05):** prior_research.json is a *synthesizer-only* artifact. Researchers and the contrarian must NOT see it — injecting prior §1 conclusions into their context anchors them to the previous answer and makes "fresh research" a fiction. Stage 2 does NOT fold prior_research into recency_pass.json; Stages 3–7 ignore the file. Only the Stage 8 synthesizer reads it, and only to render a §2 `Cross-run continuity` sub-bullet that diffs this run's §1 against prior conclusions (drift detection — the actual valuable thing).
 
-If no past runs match (file is `[]`), proceed normally — there's nothing to inject.
+If no past runs match (file is `[]`), proceed normally — synthesizer omits the §2 continuity sub-bullet.
 
 **Per-stage cost attribution (Patch UU).** At the START of each stage from Stage 2 onward, append one line to `.claude/scratch/<run-id>/stage_log.jsonl` capturing the wall-clock timestamp + the latest hook snapshot. This is the prerequisite for targeted speed work — without it, every speed claim is structural inference rather than measurement.
 
@@ -162,24 +162,7 @@ The `tool` field must be one of: `corpus_recent`, `corpus_search`, `corpus_fetch
 
 Researchers and the contrarian read `recency_pass.json` as part of their input — running recency first means the latest items influence the research, not just the synthesis.
 
-**Patch ZZ — fold prior_research into recency pass.** If `prior_research.json` exists and is non-empty, copy its contents into `recency_pass.json` under a top-level key `prior_research_summaries`:
-
-```json
-{
-  "queries_run": [...],
-  "items": [...],
-  "corpus_density_signal": "moderate",
-  "prior_research_summaries": [
-    {"run_id": "...", "similarity": 0.91, "question": "...", "conclusion_excerpt": "..."},
-    ...
-  ]
-}
-```
-
-Researchers and the contrarian then know that the user has previously researched a similar question. Use this to:
-- Avoid retracing the same comparison-matrix axes (don't re-run "best 8B models" researcher fan-out if a 2-week-old run already produced that comparison; instead focus on what's NEW since then).
-- Identify which previously-found options are still SOTA vs superseded.
-- The synthesizer's §1 should reference the prior run if relevant ("This is consistent with the [date] run conclusion of X, plus new evidence Y").
+**Patch ZZ revised (2026-05-05):** `recency_pass.json` does NOT include prior-run conclusions. The earlier design folded prior §1 text into the researcher context to "save time" — but that anchored researchers to the prior answer, making subsequent runs less independent. Now, `prior_research.json` is read ONLY by the synthesizer at Stage 8 to render a `Cross-run continuity` sub-bullet in §2 (drift detection across repeat queries). Researchers and the contrarian operate fully unbiased.
 
 **Entity-version registry triangulation (Patch GG).** If classification includes `entity_version`, before running the corpus recency pass, invoke `ops/registry-query.sh <entity>` to triangulate across HuggingFace Hub + OpenRouter. The script writes JSON to stdout with shape `{entity, latest_id, latest_source, source_agreement, sources: {huggingface: [...], openrouter: [...]}}`. Write this verbatim into `recency_pass.json` under the `entity_version_resolution` key.
 
