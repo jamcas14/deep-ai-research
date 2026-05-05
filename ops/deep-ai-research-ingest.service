@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/code/projects/deep-ai-research
+WorkingDirectory=__DAIR_PROJECT_DIR__
 ExecStart=%h/.local/bin/uv run --extra embed python -m ingest.run
 # Keep stdout/stderr in journalctl --user-unit=deep-ai-research-ingest.service.
 StandardOutput=journal

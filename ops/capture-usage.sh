@@ -30,8 +30,11 @@
 set -euo pipefail
 
 # CLAUDE_PROJECT_DIR is set by the Claude Code hook runtime to the project's
-# absolute path. Fallback to a known location if running standalone for tests.
-project_dir="${CLAUDE_PROJECT_DIR:-$HOME/code/projects/deep-ai-research}"
+# absolute path. Fallback to the parent of this script's directory (since
+# this script lives at <project>/ops/) so the script works regardless of
+# where the project is cloned.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_dir="${CLAUDE_PROJECT_DIR:-$(cd "$script_dir/.." && pwd)}"
 state_dir="$project_dir/.claude/state"
 mkdir -p "$state_dir"
 
